@@ -254,7 +254,7 @@ export default function ServerAlerts() {
                 <div className='flex items-center gap-1'>
                   {!webhook.enabled && (
                     <Badge size='xs' variant='light' color='gray'>
-                      {t('common.disabled', {})}
+                      {t('common.form.disabled', {})}
                     </Badge>
                   )}
                   <ServerCan action='webhooks.delete'>
@@ -274,7 +274,7 @@ export default function ServerAlerts() {
             ))
           )}
           {webhooks && webhooks.data.length > 0 && (
-            <Button variant='subtle' size='xs' onClick={() => refetchWebhooks()}>
+            <Button variant='subtle' size='xs' onClick={() => { void refetchWebhooks(); }}>
               {t('common.button.refresh', {})}
             </Button>
           )}

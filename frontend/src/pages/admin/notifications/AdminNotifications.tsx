@@ -43,7 +43,7 @@ export default function AdminNotifications() {
           className='rounded-md border border-(--mantine-color-default-border) bg-(--mantine-color-body) px-3 py-2 text-sm'
           value={search ?? ''}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder={t('common.search', {})}
+          placeholder={t('common.input.search', {})}
         />
       </div>
 

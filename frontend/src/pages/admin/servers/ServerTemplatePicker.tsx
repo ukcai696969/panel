@@ -6,7 +6,7 @@ import Select from '@/elements/input/Select.tsx';
 import Stack from '@/elements/layout/Stack.tsx';
 import Text from '@/elements/typography/Text.tsx';
 import { useInfiniteSearchableResource } from '@/plugins/resource/useInfiniteSearchableResource.ts';
-import { AdminServerTemplate } from '@/lib/schemas/serverTemplates.ts';
+import { AdminServerTemplate, ServerTemplate } from '@/lib/schemas/serverTemplates.ts';
 import { useToast } from '@/providers/ToastProvider.tsx';
 import { useTranslations } from '@/providers/TranslationProvider.tsx';
 
@@ -22,7 +22,7 @@ export default function ServerTemplatePicker({ onSelect }: { onSelect: (template
   const { addToast } = useToast();
   const [loading, setLoading] = useState(false);
 
-  const templates = useInfiniteSearchableResource<AdminServerTemplate>({
+  const templates = useInfiniteSearchableResource<ServerTemplate>({
     queryKey: ['admin', 'server-templates'],
     fetcher: (page, search) => getServerTemplates(page, search),
   });

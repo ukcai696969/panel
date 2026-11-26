@@ -111,6 +111,10 @@ const baseTranslations = defineTranslations({
         deleteFailedBackups: 'Delete {count} Failed',
         retryFailedDeletions: 'Retry Failed Deletions ({count})',
         verifyConnection: 'Verify Connection',
+        done: 'Done',
+        loadMore: 'Load more',
+        showMore: 'Show more',
+        refresh: 'Refresh',
       },
       alert: {
         error: 'Error',
@@ -302,6 +306,10 @@ const baseTranslations = defineTranslations({
         deleteCrash: {
           title: 'Delete Crash',
           content: 'Are you sure you want to delete the crash from **{timestamp}** and its console output?',
+        },
+        deleteWebhook: {
+          title: 'Delete Webhook',
+          content: 'Are you sure you want to delete this webhook? Crash alerts will no longer be sent to it.',
         },
         deleteFailedBackups: {
           title: 'Confirm Failed Backup Deletion',
@@ -1824,6 +1832,9 @@ const baseTranslations = defineTranslations({
             },
           },
         },
+        billing: {
+          title: 'Billing',
+        },
         securityKeys: {
           title: 'Security Keys',
           table: {
@@ -3198,6 +3209,84 @@ const baseTranslations = defineTranslations({
                 },
                 toast: {
                   updated: 'Release tokens updated.',
+                },
+              },
+            },
+            advanced: {
+              title: 'Advanced',
+              page: {
+                title: 'Advanced',
+                toast: {
+                  updated: 'Advanced settings updated.',
+                },
+                restartRequired: {
+                  title: 'Restart required',
+                  body: 'These settings require a panel restart to take effect — except the request log limit, which applies immediately. When a field is left blank, the environment variable governs instead. See Environment below for the variables that can only be changed in .env.',
+                },
+                environment: {
+                  title: 'Environment',
+                  description:
+                    'Restart-only settings that can only be changed in .env (or compose) plus a panel restart. These are shown for reference only — there is no edit path here. Secrets are never shown, not even masked.',
+                  column: {
+                    variable: 'Variable',
+                    status: 'Status',
+                    value: 'Value',
+                    description: 'Description',
+                  },
+                  set: 'Set',
+                  notSet: 'Not set',
+                },
+                section: {
+                  password: 'Password hashing',
+                  networking: 'Networking',
+                  logging: 'Logging',
+                  sentry: 'Sentry',
+                  features: 'Features',
+                },
+                form: {
+                  passwordAlgorithm: 'Password algorithm',
+                  passwordAlgorithmDescription:
+                    'Algorithm new password hashes are written with. Existing hashes are rewritten on the next login; changing this never locks anyone out. Restart required. Environment: APP_PASSWORD_ALGORITHM.',
+                  passwordAlgorithmPlaceholder: 'Use environment value',
+                  passwordBcryptCost: 'Bcrypt cost',
+                  passwordBcryptCostDescription:
+                    'Cost factor, 10–16. Each step doubles the hashing time. Only used when the algorithm is bcrypt. Restart required. Environment: APP_PASSWORD_BCRYPT_COST (default 12).',
+                  passwordArgon2MemoryMib: 'Argon2 memory (MiB)',
+                  passwordArgon2MemoryMibDescription:
+                    'Memory used per Argon2id hash, 19–1024 MiB. Only used when the algorithm is Argon2id. Restart required. Environment: APP_PASSWORD_ARGON2_MEMORY (default 64).',
+                  passwordArgon2Iterations: 'Argon2 iterations',
+                  passwordArgon2IterationsDescription:
+                    'Passes over the memory, 1–16. Only used when the algorithm is Argon2id. Restart required. Environment: APP_PASSWORD_ARGON2_ITERATIONS (default 3).',
+                  blockedCidrs: 'Blocked CIDRs',
+                  blockedCidrsDescription:
+                    'Subnets the panel refuses to connect to when fetching user-provided URLs (SSRF protection). An empty list disables the protection entirely. Saving this tab stores the list shown here. Restart required. Environment: APP_BLOCKED_CIDRS.',
+                  trustedProxies: 'Trusted proxies',
+                  trustedProxiesDescription:
+                    'CIDRs of proxies whose X-Forwarded-For, X-Forwarded-Host and X-Real-IP headers are trusted. Wrong values let clients spoof their IP address. Restart required. Environment: APP_TRUSTED_PROXIES (default: none trusted).',
+                  requestLogLimit: 'Request log limit',
+                  requestLogLimitDescription:
+                    'How many HTTP requests per second are written to the log before the rest are counted and summarised. 0 means unlimited. This is the only setting on this tab that applies without a restart. Environment: APP_REQUEST_LOG_LIMIT (default 250).',
+                  sentryUrl: 'Sentry DSN',
+                  sentryUrlDescription:
+                    'Sentry DSN for error reporting. Leave blank to disable Sentry. Restart required. Environment: SENTRY_URL.',
+                  sentryTracingSampleRate: 'Sentry tracing sample rate',
+                  sentryTracingSampleRateDescription:
+                    'Fraction of transactions sent to Sentry, 0.0–1.0. Restart required. Environment: SENTRY_TRACING_SAMPLE_RATE (default 1.0).',
+                  enableWingsProxy: 'Enable Wings proxy',
+                  enableWingsProxyDescription:
+                    'Proxy user requests to Wings nodes through the panel. Simplifies home-network setups; not recommended for many nodes or high-traffic setups. Restart required. Environment: APP_ENABLE_WINGS_PROXY. Note: saving this tab stores an explicit value — the position shown is the built-in default when unset, not necessarily the value in force.',
+                  useDecryptionCache: 'Use decryption cache',
+                  useDecryptionCacheDescription:
+                    'Cache decrypted values in memory and Redis to improve performance. Can be considered less secure. Restart required. Environment: APP_USE_DECRYPTION_CACHE. Note: saving this tab stores an explicit value — the position shown is the built-in default when unset, not necessarily the value in force.',
+                  useInternalCache: 'Use internal cache',
+                  useInternalCacheDescription:
+                    'Cache short-lived values in app memory and Redis instead of just Redis. Improves performance at the cost of higher memory usage. Restart required. Environment: APP_USE_INTERNAL_CACHE. Note: saving this tab stores an explicit value — the position shown is the built-in default when unset, not necessarily the value in force.',
+                },
+                enum: {
+                  passwordAlgorithm: {
+                    bcrypt: 'bcrypt',
+                    argon2id: 'Argon2id',
+                  },
                 },
               },
             },
@@ -6480,6 +6569,16 @@ const baseTranslations = defineTranslations({
         activity: {
           title: 'Activity',
         },
+        billing: {
+          title: 'Billing',
+        },
+        notifications: {
+          title: 'Notifications',
+          empty: {
+            title: 'No notifications',
+            description: 'There are no alerts or notifications to show yet.',
+          },
+        },
       },
       server: {
         viewAdmin: {
@@ -9219,6 +9318,43 @@ const baseTranslations = defineTranslations({
         },
         activity: {
           title: 'Activity',
+        },
+        alerts: {
+          title: 'Alerts',
+          note: 'Alerts are sent when a server crashes or goes offline unexpectedly. Clean stops do not send alerts.',
+          toast: {
+            created: 'Webhook created.',
+            deleted: 'Webhook deleted.',
+          },
+          secret: {
+            title: 'Webhook secret',
+            description:
+              'Save this secret now — it is only shown once. Use it to verify webhook signatures.',
+          },
+          webhooks: {
+            title: 'Webhooks',
+            button: {
+              add: 'Add Webhook',
+            },
+            field: {
+              name: 'Name',
+              kind: 'Type',
+              url: 'URL',
+              urlHint: 'Discord webhook URL, or a URL that accepts signed JSON posts.',
+            },
+            empty: {
+              title: 'No webhooks',
+              description: 'Add a webhook to get notified when this server crashes or goes offline.',
+            },
+            failures: '{count} failed deliveries',
+          },
+          history: {
+            title: 'Alert History',
+            empty: {
+              title: 'No alerts yet',
+              description: 'Alerts for this server will show up here.',
+            },
+          },
         },
       },
     },

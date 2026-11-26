@@ -198,7 +198,7 @@ export default function ServerAddons() {
       )}
 
       {searching && <Spinner.Centered />}
-      {searchError && <ErrorState error={httpErrorToHuman(searchError)} />}
+      {searchError ? <ErrorState error={httpErrorToHuman(searchError)} /> : null}
 
       {!searching && !searchError && query.trim().length >= 2 && results?.projects.length === 0 && (
         <EmptyState
