@@ -1,0 +1,452 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "aeb1ea54-b40d-401f-a588-3d8f3f3deef7",
+  "prevIds": [
+    "80219ac4-c2bb-404e-9886-d33d503dfa4a"
+  ],
+  "footprints": [
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "server_templates"
+      ],
+      "writes": [
+        "s|tbl|public.server_templates",
+        "n|tbl|public.server_templates",
+        "e|tbl|public.server_templates",
+        "n|rel|public.server_templates",
+        "n|type|public.server_templates",
+        "n|rel|public.server_templates_pkey"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "server_templates",
+        "server_templates_owner_name_idx"
+      ],
+      "writes": [
+        "s|idx|public.server_templates_owner_name_idx",
+        "n|idx|public.server_templates_owner_name_idx",
+        "e|idx|public.server_templates_owner_name_idx",
+        "n|rel|public.server_templates_owner_name_idx"
+      ],
+      "reads": [
+        "n|tbl|public.server_templates",
+        "n|sch|public",
+        "n|col|public.server_templates.owner_uuid",
+        "n|col|public.server_templates.name"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "server_templates",
+        "server_templates_global_name_idx"
+      ],
+      "writes": [
+        "s|idx|public.server_templates_global_name_idx",
+        "n|idx|public.server_templates_global_name_idx",
+        "e|idx|public.server_templates_global_name_idx",
+        "n|rel|public.server_templates_global_name_idx"
+      ],
+      "reads": [
+        "n|tbl|public.server_templates",
+        "n|sch|public",
+        "n|col|public.server_templates.name"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "server_templates",
+        "server_templates_owner_idx"
+      ],
+      "writes": [
+        "s|idx|public.server_templates_owner_idx",
+        "n|idx|public.server_templates_owner_idx",
+        "e|idx|public.server_templates_owner_idx",
+        "n|rel|public.server_templates_owner_idx"
+      ],
+      "reads": [
+        "n|tbl|public.server_templates",
+        "n|sch|public",
+        "n|col|public.server_templates.owner_uuid"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "server_templates",
+        "server_templates_source_server_idx"
+      ],
+      "writes": [
+        "s|idx|public.server_templates_source_server_idx",
+        "n|idx|public.server_templates_source_server_idx",
+        "e|idx|public.server_templates_source_server_idx",
+        "n|rel|public.server_templates_source_server_idx"
+      ],
+      "reads": [
+        "n|tbl|public.server_templates",
+        "n|sch|public",
+        "n|col|public.server_templates.source_server_uuid"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "server_templates"
+      ],
+      "writes": [
+        "s|fk|public.server_templates.server_templates_owner_uuid_users_uuid_fkey",
+        "n|fk|public.server_templates.server_templates_owner_uuid_users_uuid_fkey",
+        "e|fk|public.server_templates.server_templates_owner_uuid_users_uuid_fkey",
+        "n|con|public.server_templates.server_templates_owner_uuid_users_uuid_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.server_templates",
+        "n|sch|public",
+        "n|tbl|public.users",
+        "n|sch|public",
+        "n|col|public.server_templates.owner_uuid",
+        "n|col|public.users.uuid",
+        "e|uniqueness|public.users.uuid"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "server_templates"
+      ],
+      "writes": [
+        "s|fk|public.server_templates.server_templates_source_server_uuid_servers_uuid_fkey",
+        "n|fk|public.server_templates.server_templates_source_server_uuid_servers_uuid_fkey",
+        "e|fk|public.server_templates.server_templates_source_server_uuid_servers_uuid_fkey",
+        "n|con|public.server_templates.server_templates_source_server_uuid_servers_uuid_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.server_templates",
+        "n|sch|public",
+        "n|tbl|public.servers",
+        "n|sch|public",
+        "n|col|public.server_templates.source_server_uuid",
+        "n|col|public.servers.uuid",
+        "e|uniqueness|public.servers.uuid"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "server_templates",
+        "isRlsEnabled": false,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "server_templates",
+        "name": "uuid",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "gen_random_uuid()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "server_templates",
+        "name": "name",
+        "type": "varchar(255)",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "server_templates",
+        "name": "description",
+        "type": "varchar(1024)",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "server_templates",
+        "name": "owner_uuid",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "server_templates",
+        "name": "source_server_uuid",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "server_templates",
+        "name": "snapshot",
+        "type": "jsonb",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "server_templates",
+        "name": "created",
+        "type": "timestamp",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "server_templates",
+        "name": "updated",
+        "type": "timestamp",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "server_templates",
+        "name": "server_templates_owner_name_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "owner_uuid",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "name",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": true,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "server_templates",
+        "name": "server_templates_global_name_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "name",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": true,
+        "where": "\"owner_uuid\" IS NULL",
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "server_templates",
+        "name": "server_templates_owner_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "owner_uuid",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "server_templates",
+        "name": "server_templates_source_server_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "source_server_uuid",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "server_templates",
+        "name": "server_templates_owner_uuid_users_uuid_fkey",
+        "nameExplicit": false,
+        "columns": [
+          "owner_uuid"
+        ],
+        "schemaTo": "public",
+        "tableTo": "users",
+        "columnsTo": [
+          "uuid"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "server_templates",
+        "name": "server_templates_source_server_uuid_servers_uuid_fkey",
+        "nameExplicit": false,
+        "columns": [
+          "source_server_uuid"
+        ],
+        "schemaTo": "public",
+        "tableTo": "servers",
+        "columnsTo": [
+          "uuid"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "SET NULL",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "server_templates",
+        "name": "server_templates_pkey",
+        "columns": [
+          "uuid"
+        ],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    }
+  ]
+}
