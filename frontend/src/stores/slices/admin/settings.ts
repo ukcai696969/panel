@@ -205,6 +205,22 @@ export const createSettingsSlice: StateCreator<AdminStore, [], [], SettingsSlice
     wingsReleaseToken: null,
     dbAgentReleaseToken: null,
   },
+  // All `null` / empty = unset: the environment variables govern, exactly
+  // like a panel that has never saved the Advanced tab.
+  advanced: {
+    passwordAlgorithm: null,
+    passwordBcryptCost: null,
+    passwordArgon2MemoryMib: null,
+    passwordArgon2Iterations: null,
+    blockedCidrs: null,
+    trustedProxies: null,
+    requestLogLimit: null,
+    sentryUrl: null,
+    sentryTracingSampleRate: null,
+    enableWingsProxy: null,
+    useDecryptionCache: null,
+    useInternalCache: null,
+  },
 
   updateInformation: null,
   updateInformationError: null,
@@ -222,6 +238,7 @@ export const createSettingsSlice: StateCreator<AdminStore, [], [], SettingsSlice
       activity: value.activity,
       ratelimits: value.ratelimits,
       updates: value.updates,
+      advanced: value.advanced,
     })),
   updateSettings: (value) =>
     set((state) => ({
@@ -236,6 +253,7 @@ export const createSettingsSlice: StateCreator<AdminStore, [], [], SettingsSlice
       ...(value.activity ? { activity: { ...state.activity, ...value.activity } } : {}),
       ...(value.ratelimits ? { ratelimits: { ...state.ratelimits, ...value.ratelimits } } : {}),
       ...(value.updates ? { updates: { ...state.updates, ...value.updates } } : {}),
+      ...(value.advanced ? { advanced: { ...state.advanced, ...value.advanced } } : {}),
     })),
   setUpdateInformation: (value) => set((state) => ({ ...state, updateInformation: value })),
   loadUpdateInformation: async () => {

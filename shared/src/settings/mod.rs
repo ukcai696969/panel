@@ -25,6 +25,7 @@ use tokio::sync::{Semaphore, SemaphorePermit};
 use utoipa::ToSchema;
 
 pub mod activity;
+pub mod advanced;
 pub mod app;
 pub mod billing;
 pub mod metadata;
@@ -411,6 +412,8 @@ pub struct AppSettings {
     pub updates: updates::AppSettingsUpdates,
     #[schema(inline)]
     pub billing: billing::AppSettingsBilling,
+    #[schema(inline)]
+    pub advanced: advanced::AppSettingsAdvanced,
 
     #[serde(skip)]
     pub disabled_extensions: Vec<compact_str::CompactString>,
@@ -442,6 +445,7 @@ impl AppSettings {
             ratelimits: ratelimits::AppSettingsRatelimits::mock(),
             updates: updates::AppSettingsUpdates::mock(),
             billing: billing::AppSettingsBilling::mock(),
+            advanced: advanced::AppSettingsAdvanced::mock(),
             disabled_extensions: Vec::new(),
             extension_permissions: BTreeMap::new(),
             extensions: HashMap::new(),
@@ -462,6 +466,7 @@ impl AppSettings {
         json["captcha_provider"] =
             serde_json::to_value(self.captcha_provider.clone().censored()).unwrap();
         json["updates"] = serde_json::to_value(self.updates.clone().censored()).unwrap();
+        json["billing"] = serde_json::to_value(self.billing.clone().censored()).unwrap();
 
         json
     }
@@ -514,6 +519,103 @@ impl AppSettings {
         }
 
         Err(anyhow::anyhow!("failed to find extension settings"))
+    }
+}
+
+/// Encrypt a captcha secret for storage, using the same base32 (alphabet Z) +
+/// `Database::encrypt` encoding as the S3 and SMTP secrets in this file (and the
+/// update tokens in `updates.rs`).
+///
+/// An empty secret is stored as an empty string, exactly like the `Option` secrets
+/// in `updates.rs` (empty string means "no secret"): there is nothing to protect,
+/// and it keeps a censored (`""`, see [`CENSORED_PLACEHOLDER`]) in-memory value
+/// from ever being persisted as ciphertext.
+async fn encrypt_captcha_secret(
+    database: &crate::database::Database,
+    secret: &compact_str::CompactString,
+) -> Result<compact_str::CompactString, anyhow::Error> {
+    if secret.is_empty() {
+        return Ok(compact_str::CompactString::default());
+    }
+
+    Ok(base32::encode(base32::Alphabet::Z, &database.encrypt(secret.clone()).await?).into())
+}
+
+/// Base32 (alphabet Z) decode of a stored encrypted setting value. Returns `None`
+/// when the stored value is not valid base32 -- the signal that it is a legacy
+/// plaintext secret rather than ciphertext (see [`decrypt_captcha_secret`]).
+fn decode_encrypted_setting(stored: &str) -> Option<Vec<u8>> {
+    base32::decode(base32::Alphabet::Z, stored)
+}
+
+/// Decrypt a stored captcha secret, tolerating the plaintext format used before
+/// captcha secrets were encrypted.
+///
+/// # Migration
+///
+/// Captcha secrets (`turnstile_secret_key`, `recaptcha_secret_key`,
+/// `hcaptcha_secret_key`, `cap_secret_key`, `friendlycaptcha_api_key`) used to be
+/// written to the `settings` table as plaintext (plain `write_raw_setting` /
+/// `take_raw_setting`), while every other settings secret (S3, SMTP, update
+/// tokens) was already stored encrypted. Existing installs therefore still have
+/// plaintext values in the database, and a deploy that only understood
+/// ciphertext would either fail to load settings or silently corrupt those
+/// secrets.
+///
+/// This function therefore tries decryption first and falls back to the stored
+/// value itself:
+///
+/// - no stored value, or an empty one, stays empty;
+/// - a value that base32-decodes (alphabet Z) and decrypts with the current
+///   `APP_ENCRYPTION_KEY` is returned decrypted;
+/// - anything else -- not valid base32, or decryption fails (wrong key, truncated
+///   data, or a legacy plaintext secret that happens to decode) -- is returned
+///   as-is, i.e. treated as a legacy plaintext secret. The base32-decodes-but-
+///   won't-decrypt case is logged at warn level (it can also mean ciphertext
+///   from a rotated `APP_ENCRYPTION_KEY`, which no fallback can recover).
+///
+/// The fallback value is never lost: the next whole-document save re-serialises
+/// it through [`encrypt_captcha_secret`], so a legacy plaintext secret is
+/// transparently re-encrypted at rest the first time any settings save happens
+/// after the upgrade (any tab -- saves are whole-document). No data migration,
+/// backfill job or manual step is needed, and no value is ever dropped.
+///
+/// Note the fallback relies on decryption *failing* for non-ciphertext. If the
+/// `simple_crypt` primitive ever accepted arbitrary bytes without failing, a
+/// legacy plaintext secret that is valid base32 could decrypt to garbage instead
+/// of falling back; that behaviour belongs to the crate, not this code, and was
+/// not verified here.
+async fn decrypt_captcha_secret(
+    database: &crate::database::Database,
+    key: &'static str,
+    stored: Option<compact_str::CompactString>,
+) -> compact_str::CompactString {
+    let Some(stored) = stored else {
+        return compact_str::CompactString::default();
+    };
+    if stored.is_empty() {
+        return stored;
+    }
+
+    match decode_encrypted_setting(&stored) {
+        Some(encrypted) => match database.decrypt(encrypted).await {
+            Ok(decrypted) => decrypted,
+            Err(err) => {
+                // The value looks like ciphertext (valid base32) but will not
+                // decrypt with the current key -- most likely a legacy plaintext
+                // secret that happens to be valid base32, but possibly ciphertext
+                // from a rotated `APP_ENCRYPTION_KEY`. It is kept as-is either
+                // way (see the migration note above), but log it: in the
+                // rotated-key case the next save will re-encrypt this stored
+                // value as if it were the secret, so an operator needs to know.
+                tracing::warn!(
+                    key,
+                    "stored captcha secret did not decrypt, keeping stored value as plaintext: {err:#}"
+                );
+                stored
+            }
+        },
+        None => stored,
     }
 }
 
@@ -682,7 +784,10 @@ impl SettingsSerializeExt for AppSettings {
                 serializer = serializer
                     .write_raw_setting("captcha_provider", "turnstile")
                     .write_raw_setting("turnstile_site_key", &**site_key)
-                    .write_raw_setting("turnstile_secret_key", &**secret_key);
+                    .write_raw_setting(
+                        "turnstile_secret_key",
+                        encrypt_captcha_secret(&database, secret_key).await?,
+                    );
             }
             CaptchaProvider::Recaptcha {
                 v3,
@@ -695,7 +800,10 @@ impl SettingsSerializeExt for AppSettings {
                     .write_raw_setting("recaptcha_v3", v3.to_compact_string())
                     .write_raw_setting("recaptcha_threshold", threshold.to_compact_string())
                     .write_raw_setting("recaptcha_site_key", &**site_key)
-                    .write_raw_setting("recaptcha_secret_key", &**secret_key);
+                    .write_raw_setting(
+                        "recaptcha_secret_key",
+                        encrypt_captcha_secret(&database, secret_key).await?,
+                    );
             }
             CaptchaProvider::Hcaptcha {
                 site_key,
@@ -704,13 +812,19 @@ impl SettingsSerializeExt for AppSettings {
                 serializer = serializer
                     .write_raw_setting("captcha_provider", "hcaptcha")
                     .write_raw_setting("hcaptcha_site_key", &**site_key)
-                    .write_raw_setting("hcaptcha_secret_key", &**secret_key);
+                    .write_raw_setting(
+                        "hcaptcha_secret_key",
+                        encrypt_captcha_secret(&database, secret_key).await?,
+                    );
             }
             CaptchaProvider::FriendlyCaptcha { site_key, api_key } => {
                 serializer = serializer
                     .write_raw_setting("captcha_provider", "friendlycaptcha")
                     .write_raw_setting("friendlycaptcha_site_key", &**site_key)
-                    .write_raw_setting("friendlycaptcha_api_key", &**api_key);
+                    .write_raw_setting(
+                        "friendlycaptcha_api_key",
+                        encrypt_captcha_secret(&database, api_key).await?,
+                    );
             }
             CaptchaProvider::Cap {
                 api_url,
@@ -721,7 +835,10 @@ impl SettingsSerializeExt for AppSettings {
                     .write_raw_setting("captcha_provider", "cap")
                     .write_raw_setting("cap_api_url", &**api_url)
                     .write_raw_setting("cap_site_key", &**site_key)
-                    .write_raw_setting("cap_secret_key", &**secret_key);
+                    .write_raw_setting(
+                        "cap_secret_key",
+                        encrypt_captcha_secret(&database, secret_key).await?,
+                    );
             }
         }
 
@@ -743,6 +860,8 @@ impl SettingsSerializeExt for AppSettings {
             .nest("updates", &self.updates)
             .await?
             .nest("billing", &self.billing)
+            .await?
+            .nest("advanced", &self.advanced)
             .await?;
 
         for (ext_identifier, ext_settings) in self.extensions.iter() {
@@ -949,9 +1068,10 @@ impl SettingsDeserializeExt for AppSettingsDeserializer {
                     site_key: deserializer
                         .take_raw_setting("turnstile_site_key")
                         .unwrap_or_default(),
-                    secret_key: deserializer
-                        .take_raw_setting("turnstile_secret_key")
-                        .unwrap_or_default(),
+                    secret_key: {
+                        let stored = deserializer.take_raw_setting("turnstile_secret_key");
+                        decrypt_captcha_secret(&deserializer.database, "turnstile_secret_key", stored).await
+                    },
                 },
                 Some("recaptcha") => CaptchaProvider::Recaptcha {
                     threshold: deserializer
@@ -966,25 +1086,28 @@ impl SettingsDeserializeExt for AppSettingsDeserializer {
                     site_key: deserializer
                         .take_raw_setting("recaptcha_site_key")
                         .unwrap_or_default(),
-                    secret_key: deserializer
-                        .take_raw_setting("recaptcha_secret_key")
-                        .unwrap_or_default(),
+                    secret_key: {
+                        let stored = deserializer.take_raw_setting("recaptcha_secret_key");
+                        decrypt_captcha_secret(&deserializer.database, "recaptcha_secret_key", stored).await
+                    },
                 },
                 Some("hcaptcha") => CaptchaProvider::Hcaptcha {
                     site_key: deserializer
                         .take_raw_setting("hcaptcha_site_key")
                         .unwrap_or_default(),
-                    secret_key: deserializer
-                        .take_raw_setting("hcaptcha_secret_key")
-                        .unwrap_or_default(),
+                    secret_key: {
+                        let stored = deserializer.take_raw_setting("hcaptcha_secret_key");
+                        decrypt_captcha_secret(&deserializer.database, "hcaptcha_secret_key", stored).await
+                    },
                 },
                 Some("friendlycaptcha") => CaptchaProvider::FriendlyCaptcha {
                     site_key: deserializer
                         .take_raw_setting("friendlycaptcha_site_key")
                         .unwrap_or_default(),
-                    api_key: deserializer
-                        .take_raw_setting("friendlycaptcha_api_key")
-                        .unwrap_or_default(),
+                    api_key: {
+                        let stored = deserializer.take_raw_setting("friendlycaptcha_api_key");
+                        decrypt_captcha_secret(&deserializer.database, "friendlycaptcha_api_key", stored).await
+                    },
                 },
                 Some("cap") => CaptchaProvider::Cap {
                     api_url: deserializer
@@ -993,9 +1116,10 @@ impl SettingsDeserializeExt for AppSettingsDeserializer {
                     site_key: deserializer
                         .take_raw_setting("cap_site_key")
                         .unwrap_or_default(),
-                    secret_key: deserializer
-                        .take_raw_setting("cap_secret_key")
-                        .unwrap_or_default(),
+                    secret_key: {
+                        let stored = deserializer.take_raw_setting("cap_secret_key");
+                        decrypt_captcha_secret(&deserializer.database, "cap_secret_key", stored).await
+                    },
                 },
                 _ => CaptchaProvider::None,
             },
@@ -1025,6 +1149,9 @@ impl SettingsDeserializeExt for AppSettingsDeserializer {
                 .await?,
             billing: deserializer
                 .nest("billing", &billing::AppSettingsBillingDeserializer)
+                .await?,
+            advanced: deserializer
+                .nest("advanced", &advanced::AppSettingsAdvancedDeserializer)
                 .await?,
             disabled_extensions: deserializer
                 .take_raw_setting("disabled_extensions")
@@ -1905,6 +2032,25 @@ mod tests {
         );
     }
 
+    // decrypt_captcha_secret / decode_encrypted_setting (plaintext -> encrypted migration)
+    #[test]
+    fn stored_captcha_secret_decode_distinguishes_ciphertext_from_legacy_plaintext() {
+        // A legacy plaintext secret containing characters outside the base32-Z
+        // alphabet (the `0x...` Cloudflare-style secrets, `-`/`_`) is not valid
+        // base32, so `decrypt_captcha_secret` treats it as plaintext and keeps it.
+        assert_eq!(decode_encrypted_setting("0x4AAAAAAA-plaintext-secret"), None);
+        assert_eq!(decode_encrypted_setting("legacy_secret-with-dashes"), None);
+
+        // A base32-Z encoding of arbitrary bytes does decode, so it is handed to
+        // `Database::decrypt`; only a decryption failure there falls back to the
+        // stored value as plaintext.
+        let encoded = base32::encode(base32::Alphabet::Z, b"ciphertext-bytes");
+        assert_eq!(
+            decode_encrypted_setting(&encoded).as_deref(),
+            Some(b"ciphertext-bytes".as_slice())
+        );
+    }
+
     // AppSettings::censored
     #[test]
     fn censored_settings_hide_secrets_without_touching_the_original() {
@@ -1924,6 +2070,10 @@ mod tests {
             site_key: "public".into(),
             secret_key: "captcha-key-secret".into(),
         };
+        settings.billing.stripe_secret_key = Some("stripe-secret-key-secret".into());
+        settings.billing.stripe_webhook_secret = Some("stripe-webhook-secret".into());
+        settings.billing.stripe_publishable_key = Some("pk_test_example".into());
+
         let mail_mode = settings.mail_mode.clone();
 
         let censored = settings.censored().to_string();
@@ -1932,10 +2082,15 @@ mod tests {
             "smtp-user-secret",
             "smtp-password-secret",
             "captcha-key-secret",
+            "stripe-secret-key-secret",
+            "stripe-webhook-secret",
         ] {
             assert!(!censored.contains(secret), "{secret} leaked");
         }
         assert!(censored.contains("smtp.example.com"));
+        // The publishable key is public by design, so censoring must
+        // leave it visible.
+        assert!(censored.contains("pk_test_example"));
         assert!(settings.mail_mode == mail_mode);
         assert!(matches!(
             &settings.captcha_provider,

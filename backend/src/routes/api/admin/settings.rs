@@ -64,6 +64,23 @@ mod put {
         )
     }
 
+    /// The advanced fields only unrestricted admins may change: password
+    /// hashing decides how credentials are stored, and the proxy / SSRF
+    /// lists decide which IPs the panel trusts and refuses to contact.
+    /// Compared before/after like `identity_settings` below.
+    fn advanced_identity_settings(
+        settings: &shared::settings::AppSettings,
+    ) -> impl PartialEq + use<> {
+        (
+            settings.advanced.password_algorithm,
+            settings.advanced.password_bcrypt_cost,
+            settings.advanced.password_argon2_memory_mib,
+            settings.advanced.password_argon2_iterations,
+            settings.advanced.blocked_cidrs.clone(),
+            settings.advanced.trusted_proxies.clone(),
+        )
+    }
+
     #[derive(ToSchema, Validate, Deserialize)]
     pub struct PayloadApp {
         #[garde(length(chars, min = 1, max = 64))]
@@ -349,6 +366,66 @@ mod put {
     }
 
     #[derive(ToSchema, Validate, Deserialize)]
+    pub struct PayloadAdvanced {
+        // Password hashing (`APP_PASSWORD_*`). Ranges are the
+        // `crypt::PasswordAlgorithm` constructor ranges.
+        //
+        // Every field is double-option, like the `PayloadUpdates` tokens:
+        // absent = leave alone, `null` = clear (revert to the env var),
+        // value = set. The Advanced form always submits the whole section,
+        // so a blank field in the form clears the stored value.
+        #[garde(skip)]
+        #[serde(default, with = "::serde_with::rust::double_option")]
+        password_algorithm: Option<Option<shared::settings::advanced::PasswordAlgorithmSetting>>,
+        #[garde(range(min = 10, max = 16))]
+        #[schema(minimum = 10, maximum = 16)]
+        #[serde(default, with = "::serde_with::rust::double_option")]
+        password_bcrypt_cost: Option<Option<u32>>,
+        #[garde(range(min = 19, max = 1024))]
+        #[schema(minimum = 19, maximum = 1024)]
+        #[serde(default, with = "::serde_with::rust::double_option")]
+        password_argon2_memory_mib: Option<Option<u32>>,
+        #[garde(range(min = 1, max = 16))]
+        #[schema(minimum = 1, maximum = 16)]
+        #[serde(default, with = "::serde_with::rust::double_option")]
+        password_argon2_iterations: Option<Option<u32>>,
+
+        // SSRF / proxy lists. Every entry must parse as a CIDR — checked
+        // in the route (garde has no CIDR validator); a bad entry is a
+        // 400 and nothing is saved.
+        #[garde(length(max = 256))]
+        #[serde(default, with = "::serde_with::rust::double_option")]
+        blocked_cidrs: Option<Option<Vec<compact_str::CompactString>>>,
+        #[garde(length(max = 256))]
+        #[serde(default, with = "::serde_with::rust::double_option")]
+        trusted_proxies: Option<Option<Vec<compact_str::CompactString>>>,
+
+        // Request logging. 0 = unlimited. No upper bound in code.
+        #[garde(skip)]
+        #[serde(default, with = "::serde_with::rust::double_option")]
+        request_log_limit: Option<Option<usize>>,
+
+        // Sentry. `sentry_url` is double-option so the DSN can be cleared.
+        #[garde(length(chars, min = 1, max = 512))]
+        #[serde(default, with = "::serde_with::rust::double_option")]
+        sentry_url: Option<Option<compact_str::CompactString>>,
+        #[garde(range(min = 0.0, max = 1.0))]
+        #[schema(minimum = 0.0, maximum = 1.0)]
+        #[serde(default, with = "::serde_with::rust::double_option")]
+        sentry_tracing_sample_rate: Option<Option<f32>>,
+
+        #[garde(skip)]
+        #[serde(default, with = "::serde_with::rust::double_option")]
+        enable_wings_proxy: Option<Option<bool>>,
+        #[garde(skip)]
+        #[serde(default, with = "::serde_with::rust::double_option")]
+        use_decryption_cache: Option<Option<bool>>,
+        #[garde(skip)]
+        #[serde(default, with = "::serde_with::rust::double_option")]
+        use_internal_cache: Option<Option<bool>>,
+    }
+
+    #[derive(ToSchema, Validate, Deserialize)]
     pub struct Payload {
         #[garde(skip)]
         #[serde(default, with = "::serde_with::rust::double_option")]
@@ -385,6 +462,9 @@ mod put {
         #[schema(inline)]
         #[garde(dive)]
         updates: Option<PayloadUpdates>,
+        #[schema(inline)]
+        #[garde(dive)]
+        advanced: Option<PayloadAdvanced>,
     }
 
     #[derive(ToSchema, Serialize)]
@@ -415,6 +495,7 @@ mod put {
 
         let mut settings = state.settings.get_mut().await?;
         let identity_settings_before = identity_settings(&settings);
+        let advanced_identity_settings_before = advanced_identity_settings(&settings);
 
         if let Some(storage_driver) = data.storage_driver {
             settings.storage_driver = storage_driver;
@@ -801,6 +882,72 @@ mod put {
                 settings.updates.db_agent_release_token = db_agent_release_token;
             }
         }
+        if let Some(advanced) = data.advanced {
+            // Validate every CIDR before mutating anything: a bad entry is
+            // a 400 and nothing in this request is saved.
+            for cidr in advanced
+                .blocked_cidrs
+                .iter()
+                .flatten()
+                .flatten()
+                .chain(advanced.trusted_proxies.iter().flatten().flatten())
+            {
+                // `sqlx::types::ipnetwork::IpNetwork` is the CIDR type
+                // this crate already uses (see `PayloadRatelimits`); the
+                // backend has no direct `cidr` dependency. The settings
+                // deserializer re-validates as `cidr::IpCidr` on load.
+                if cidr.parse::<sqlx::types::ipnetwork::IpNetwork>().is_err() {
+                    return ApiResponse::error(format!("invalid CIDR: {cidr}"))
+                        .with_status(StatusCode::BAD_REQUEST)
+                        .ok();
+                }
+            }
+            if let Some(sentry_url) = &advanced.sentry_url
+                && let Some(sentry_url) = sentry_url
+                && reqwest::Url::parse(sentry_url).is_err()
+            {
+                return ApiResponse::error("sentry url is not a valid url")
+                    .with_status(StatusCode::BAD_REQUEST)
+                    .ok();
+            }
+
+            if let Some(password_algorithm) = advanced.password_algorithm {
+                settings.advanced.password_algorithm = password_algorithm;
+            }
+            if let Some(password_bcrypt_cost) = advanced.password_bcrypt_cost {
+                settings.advanced.password_bcrypt_cost = password_bcrypt_cost;
+            }
+            if let Some(password_argon2_memory_mib) = advanced.password_argon2_memory_mib {
+                settings.advanced.password_argon2_memory_mib = password_argon2_memory_mib;
+            }
+            if let Some(password_argon2_iterations) = advanced.password_argon2_iterations {
+                settings.advanced.password_argon2_iterations = password_argon2_iterations;
+            }
+            if let Some(blocked_cidrs) = advanced.blocked_cidrs {
+                settings.advanced.blocked_cidrs = blocked_cidrs;
+            }
+            if let Some(trusted_proxies) = advanced.trusted_proxies {
+                settings.advanced.trusted_proxies = trusted_proxies;
+            }
+            if let Some(request_log_limit) = advanced.request_log_limit {
+                settings.advanced.request_log_limit = request_log_limit;
+            }
+            if let Some(sentry_url) = advanced.sentry_url {
+                settings.advanced.sentry_url = sentry_url;
+            }
+            if let Some(sentry_tracing_sample_rate) = advanced.sentry_tracing_sample_rate {
+                settings.advanced.sentry_tracing_sample_rate = sentry_tracing_sample_rate;
+            }
+            if let Some(enable_wings_proxy) = advanced.enable_wings_proxy {
+                settings.advanced.enable_wings_proxy = enable_wings_proxy;
+            }
+            if let Some(use_decryption_cache) = advanced.use_decryption_cache {
+                settings.advanced.use_decryption_cache = use_decryption_cache;
+            }
+            if let Some(use_internal_cache) = advanced.use_internal_cache {
+                settings.advanced.use_internal_cache = use_internal_cache;
+            }
+        }
 
         if !settings.app.password_login_enabled {
             if !OAuthProvider::exists_usable_except(&state.database, None).await? {
@@ -844,10 +991,11 @@ mod put {
         }
 
         if !permissions.is_unrestricted_admin()
-            && identity_settings(&settings) != identity_settings_before
+            && (identity_settings(&settings) != identity_settings_before
+                || advanced_identity_settings(&settings) != advanced_identity_settings_before)
         {
             return ApiResponse::error(
-                "only administrators can change mail delivery, storage, panel urls, two-factor, password login or webauthn relying party settings",
+                "only administrators can change mail delivery, storage, panel urls, two-factor, password login, webauthn relying party settings, password hashing or proxy / ssrf lists",
             )
             .with_status(StatusCode::FORBIDDEN)
             .ok();
@@ -862,9 +1010,226 @@ mod put {
     }
 }
 
+mod environment {
+    use serde::Serialize;
+    use shared::{
+        GetState,
+        env::RedisMode,
+        models::user::GetPermissionManager,
+        response::{ApiResponse, ApiResponseResult},
+    };
+    use utoipa::ToSchema;
+
+    /// One restart-only environment variable. Display-only: there is no
+    /// edit path — these change in `.env` (or compose) plus a restart.
+    /// Secrets are never returned, not even masked: `value` is always
+    /// `None` for them and only `set` tells the admin anything. Non-secret
+    /// values are shown in full; nothing here is a credential.
+    #[derive(ToSchema, Serialize)]
+    struct EnvironmentEntry {
+        name: &'static str,
+        description: &'static str,
+        set: bool,
+        secret: bool,
+        value: Option<String>,
+    }
+
+    #[derive(ToSchema, Serialize)]
+    struct Response {
+        entries: Vec<EnvironmentEntry>,
+    }
+
+    fn entry(
+        name: &'static str,
+        description: &'static str,
+        value: Option<String>,
+        secret: bool,
+    ) -> EnvironmentEntry {
+        EnvironmentEntry {
+            name,
+            description,
+            set: value.is_some(),
+            secret,
+            value: if secret { None } else { value },
+        }
+    }
+
+    fn env_set(name: &str) -> Option<String> {
+        // Presence only — the value is never returned, not even for the
+        // publishable key (it is public by design, but this endpoint
+        // reports status, not values).
+        std::env::var(name).ok().filter(|v| !v.is_empty())
+    }
+
+    #[utoipa::path(get, path = "/environment", responses(
+        (status = OK, body = inline(Response)),
+    ))]
+    pub async fn route(state: GetState, permissions: GetPermissionManager) -> ApiResponseResult {
+        permissions.has_admin_permission("settings.read")?;
+
+        let env = &state.env;
+        let (redis_url, sentinel_cluster, sentinels) = match &env.redis_mode {
+            RedisMode::Redis { redis_url } => (redis_url.clone(), None, None),
+            RedisMode::Sentinel {
+                cluster_name,
+                redis_sentinels,
+            } => (
+                None,
+                Some(cluster_name.clone()),
+                Some(redis_sentinels.join(",")),
+            ),
+        };
+
+        let entries = vec![
+            entry(
+                "REDIS_URL",
+                "Redis connection URL. Required when REDIS_MODE is redis.",
+                redis_url,
+                true,
+            ),
+            entry(
+                "REDIS_MODE",
+                "Redis topology: redis or sentinel.",
+                Some(env.redis_mode.to_string()),
+                false,
+            ),
+            entry(
+                "REDIS_SENTINEL_CLUSTER",
+                "Sentinel cluster name. Required when REDIS_MODE is sentinel.",
+                sentinel_cluster,
+                false,
+            ),
+            entry(
+                "REDIS_SENTINELS",
+                "Comma-separated sentinel addresses. Required when REDIS_MODE is sentinel.",
+                sentinels,
+                false,
+            ),
+            entry(
+                "REDIS_KEY_PREFIX",
+                "Prefix for every Redis key. Changing it orphans prior keys.",
+                env.redis_key_prefix.clone(),
+                false,
+            ),
+            entry(
+                "DATABASE_URL",
+                "Primary database connection URL (contains the password).",
+                Some(env.database_url.clone()),
+                true,
+            ),
+            entry(
+                "DATABASE_URL_PRIMARY",
+                "Optional write database URL for a read/write split.",
+                env.database_url_primary.clone(),
+                true,
+            ),
+            entry(
+                "DATABASE_MIGRATE",
+                "Run pending migrations at startup.",
+                Some(env.database_migrate.to_string()),
+                false,
+            ),
+            entry(
+                "DATABASE_WRITE_POOL_SIZE",
+                "Max connections to the write database.",
+                env.database_write_pool_size.map(|size| size.to_string()),
+                false,
+            ),
+            entry(
+                "DATABASE_READ_POOL_SIZE",
+                "Max connections to the read database (only with DATABASE_URL_PRIMARY).",
+                env.database_read_pool_size.map(|size| size.to_string()),
+                false,
+            ),
+            entry("PORT", "Port the panel listens on.", Some(env.port.to_string()), false),
+            entry(
+                "BIND",
+                "Address the panel binds to.",
+                Some(env.bind.clone()),
+                false,
+            ),
+            entry(
+                "APP_PRIMARY",
+                "Whether this instance runs background tasks (e.g. hourly billing).",
+                Some(env.app_primary.to_string()),
+                false,
+            ),
+            entry(
+                "APP_DEBUG",
+                "Startup log level. Can also be toggled live from the CLI; this shows the live value.",
+                Some(env.is_debug().to_string()),
+                false,
+            ),
+            entry(
+                "APP_DISABLE_FRONTEND",
+                "Serve the API only, without the bundled frontend.",
+                Some(env.app_disable_frontend.to_string()),
+                false,
+            ),
+            entry(
+                "APP_DISABLE_EXTENSION_MANAGEMENT",
+                "Disable installing / removing / rebuilding extensions from the web UI.",
+                Some(env.app_disable_extension_management.to_string()),
+                false,
+            ),
+            entry(
+                "APP_LOG_DIRECTORY",
+                "Directory log files are written to.",
+                env.app_log_directory.clone(),
+                false,
+            ),
+            entry(
+                "SERVER_NAME",
+                "Sent as the X-Server-Name response header and to Sentry.",
+                env.server_name.clone(),
+                false,
+            ),
+            entry(
+                "AIO_BASE_WINGS_CONFIGURATION",
+                "Base Wings configuration for the all-in-one installer. Value not shown (large blob).",
+                env.aio_base_wings_configuration.as_ref().map(|_| String::new()),
+                false,
+            ),
+            entry(
+                "APP_ENCRYPTION_KEY",
+                "Master key for encrypted settings. Rotating it orphans every encrypted value — there is no re-key flow.",
+                Some(env.app_encryption_key.clone()),
+                true,
+            ),
+            entry(
+                "STRIPE_SECRET_KEY",
+                "Stripe secret key (test mode only in v1). Read per request; never stored in the panel.",
+                env_set("STRIPE_SECRET_KEY"),
+                true,
+            ),
+            entry(
+                "STRIPE_WEBHOOK_SECRET",
+                "Stripe webhook signing secret. The webhook rejects everything while it is unset.",
+                env_set("STRIPE_WEBHOOK_SECRET"),
+                true,
+            ),
+            entry(
+                "STRIPE_PUBLISHABLE_KEY",
+                "Stripe publishable key (public by design, sent to browsers).",
+                env_set("STRIPE_PUBLISHABLE_KEY"),
+                true,
+            ),
+            entry(
+                "BILLING_CHECKOUT_URL_TEMPLATE",
+                "Checkout redirect template for the (stub) Stripe checkout.",
+                env_set("BILLING_CHECKOUT_URL_TEMPLATE"),
+                false,
+            ),
+        ];
+
+        ApiResponse::new_serialized(Response { entries }).ok()
+    }
+}
+
 pub fn router(state: &State) -> OpenApiRouter<State> {
     OpenApiRouter::new()
         .routes(routes!(get::route))
         .routes(routes!(put::route))
+        .routes(routes!(environment::route))
         .with_state(state.clone())
 }

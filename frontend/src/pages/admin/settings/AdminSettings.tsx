@@ -8,6 +8,7 @@ import {
   faRobot,
   faServer,
   faShareNodes,
+  faSliders,
   faToolbox,
   faUser,
   faUserCheck,
@@ -25,6 +26,7 @@ import { useTranslations } from '@/providers/TranslationProvider.tsx';
 import { trackActivity } from '@/stores/activity.ts';
 import { useAdminStore } from '@/stores/admin.tsx';
 import ActivityContainer from './activity/ActivityContainer.tsx';
+import AdvancedContainer from './advanced/AdvancedContainer.tsx';
 import ApplicationContainer from './application/ApplicationContainer.tsx';
 import CaptchaContainer from './captcha/CaptchaContainer.tsx';
 import EmailContainer from './email/EmailContainer.tsx';
@@ -132,6 +134,12 @@ export default function AdminSettings() {
               icon: faCircleUp,
               path: '/updates',
               element: <UpdatesContainer />,
+            },
+            {
+              name: t('pages.admin.settings.tabs.advanced.title', {}),
+              icon: faSliders,
+              path: '/advanced',
+              element: <AdvancedContainer />,
             },
           ]}
         />

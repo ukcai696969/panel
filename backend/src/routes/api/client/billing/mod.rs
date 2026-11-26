@@ -56,7 +56,10 @@ mod get {
     ))]
     pub async fn route(state: GetState, user: GetUser) -> ApiResponseResult {
         let billing = state.settings.get_as(|s| s.billing.clone()).await?;
-        let stripe = crate::billing::StripeConfig::from_env();
+        // Resolved from settings with the environment as an override.
+        // Only the publishable key (public by design) and the
+        // configured flag reach the browser — never the secret key.
+        let stripe = crate::billing::StripeConfig::resolve(&state.settings).await?;
 
         // A zero balance with no row yet reads as 0; do not create a
         // row on a read.
@@ -200,7 +203,8 @@ mod post_checkout {
             .ok();
         }
 
-        let Some(stripe) = crate::billing::StripeConfig::from_env() else {
+        let Some(stripe) = crate::billing::StripeConfig::resolve(&state.settings).await?
+        else {
             return ApiResponse::error("stripe is not configured")
                 .with_status(StatusCode::SERVICE_UNAVAILABLE)
                 .ok();
@@ -222,6 +226,7 @@ mod post_checkout {
             &app_url,
             data.credits,
             &billing.currency,
+            &stripe.checkout_url_template,
         )?;
 
         tracing::info!(

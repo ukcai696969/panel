@@ -239,6 +239,7 @@ export interface RegisteredFormIds {
   'admin.teams.createOrUpdate': true;
   'admin.announcements.createOrUpdate': true;
   'admin.settings.server': true;
+  'admin.settings.advanced': true;
   'admin.settings.webauthn': true;
   'admin.settings.application': true;
   'admin.settings.metadata': true;

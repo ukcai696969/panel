@@ -6,11 +6,72 @@
 // permission list the frontend offers (see MANIFEST.md), otherwise only
 // unrestricted admins (`user.admin = true`) can use them.
 //
-// Pricing is stored in settings (`AppSettingsBilling`); Stripe secrets
-// are never here — they are environment variables only.
+// Pricing is stored in settings (`AppSettingsBilling`); Stripe
+// credentials are stored there too (secret key + webhook secret
+// encrypted at rest), with environment variables as overrides — see
+// `crate::billing::StripeConfig::resolve`. The admin Stripe endpoints
+// (`GET`/`PUT /stripe` below) never return a full secret, only masked
+// values and configured flags.
 
 use super::State;
+use serde::Serialize;
+use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
+
+/// Masked view of the Stripe settings for the admin API. This is the
+/// only shape in which Stripe credentials leave the backend towards an
+/// admin: the secrets appear only as `sk_test_…1234`-style masked
+/// values (or `null` when nothing is stored), plus configured and
+/// env-override flags. The publishable key is public by design and is
+/// returned in full; the checkout URL template is not secret either.
+#[derive(ToSchema, Serialize)]
+struct StripeSettingsResponse {
+    stripe_secret_key_masked: Option<String>,
+    stripe_secret_key_configured: bool,
+    stripe_secret_key_from_env: bool,
+    stripe_webhook_secret_masked: Option<String>,
+    stripe_webhook_secret_configured: bool,
+    stripe_webhook_secret_from_env: bool,
+    stripe_publishable_key: Option<String>,
+    stripe_publishable_key_from_env: bool,
+    checkout_url_template: String,
+    checkout_url_template_from_env: bool,
+    /// A secret key resolves from the environment or settings, so
+    /// Stripe can be effectively configured even when nothing is stored.
+    stripe_configured: bool,
+}
+
+/// A non-empty env var, or `None` when unset/empty. An empty env var
+/// counts as unset everywhere in the Stripe precedence rules.
+fn stripe_env_var(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|value| !value.trim().is_empty())
+}
+
+fn stripe_settings_response(
+    billing: &shared::settings::billing::AppSettingsBilling,
+) -> StripeSettingsResponse {
+    let secret_from_env = stripe_env_var("STRIPE_SECRET_KEY").is_some();
+    let webhook_from_env = stripe_env_var("STRIPE_WEBHOOK_SECRET").is_some();
+    let publishable_from_env = stripe_env_var("STRIPE_PUBLISHABLE_KEY").is_some();
+    let template_from_env = stripe_env_var("BILLING_CHECKOUT_URL_TEMPLATE").is_some();
+
+    StripeSettingsResponse {
+        stripe_secret_key_masked: billing.stripe_secret_key_masked(),
+        stripe_secret_key_configured: billing.stripe_secret_key.is_some(),
+        stripe_secret_key_from_env: secret_from_env,
+        stripe_webhook_secret_masked: billing.stripe_webhook_secret_masked(),
+        stripe_webhook_secret_configured: billing.stripe_webhook_secret.is_some(),
+        stripe_webhook_secret_from_env: webhook_from_env,
+        stripe_publishable_key: billing
+            .stripe_publishable_key
+            .as_ref()
+            .map(|key| key.to_string()),
+        stripe_publishable_key_from_env: publishable_from_env,
+        checkout_url_template: billing.checkout_url_template.to_string(),
+        checkout_url_template_from_env: template_from_env,
+        stripe_configured: secret_from_env || billing.stripe_secret_key.is_some(),
+    }
+}
 
 mod get_pricing {
     use serde::Serialize;
@@ -21,10 +82,27 @@ mod get_pricing {
     };
     use utoipa::ToSchema;
 
+    /// Pricing only — the Stripe credentials in `AppSettingsBilling`
+    /// are deliberately NOT part of this response (they have their own
+    /// masked endpoint, `GET /stripe`, below). Keeping them out here
+    /// also means the existing frontend pricing helpers keep working
+    /// unchanged.
+    #[derive(ToSchema, Serialize)]
+    struct Pricing {
+        enabled: bool,
+        currency: compact_str::CompactString,
+        price_per_gb_ram_per_hour_credits: i64,
+        price_per_100_cpu_per_hour_credits: i64,
+        price_per_gb_disk_per_hour_credits: i64,
+        suspend_on_negative_balance: bool,
+        minimum_purchase_credits: i64,
+        maximum_purchase_credits: i64,
+    }
+
     #[derive(ToSchema, Serialize)]
     struct Response {
         #[schema(inline)]
-        billing: shared::settings::billing::AppSettingsBilling,
+        billing: Pricing,
     }
 
     #[utoipa::path(get, path = "/pricing", responses(
@@ -35,7 +113,19 @@ mod get_pricing {
 
         let billing = state.settings.get_as(|s| s.billing.clone()).await?;
 
-        ApiResponse::new_serialized(Response { billing }).ok()
+        ApiResponse::new_serialized(Response {
+            billing: Pricing {
+                enabled: billing.enabled,
+                currency: billing.currency,
+                price_per_gb_ram_per_hour_credits: billing.price_per_gb_ram_per_hour_credits,
+                price_per_100_cpu_per_hour_credits: billing.price_per_100_cpu_per_hour_credits,
+                price_per_gb_disk_per_hour_credits: billing.price_per_gb_disk_per_hour_credits,
+                suspend_on_negative_balance: billing.suspend_on_negative_balance,
+                minimum_purchase_credits: billing.minimum_purchase_credits,
+                maximum_purchase_credits: billing.maximum_purchase_credits,
+            },
+        })
+        .ok()
     }
 }
 
@@ -45,6 +135,7 @@ mod put_pricing {
     use serde::{Deserialize, Serialize};
     use shared::{
         ApiError, GetState,
+        censor::Censor,
         models::{admin_activity::GetAdminActivityLogger, user::GetPermissionManager},
         response::{ApiResponse, ApiResponseResult},
     };
@@ -131,7 +222,9 @@ mod put_pricing {
             settings.billing.maximum_purchase_credits = maximum;
         }
 
-        let billing_json = serde_json::to_value(&settings.billing)
+        // Censored: `AppSettingsBilling` now carries Stripe secrets,
+        // which must never land in the activity log.
+        let billing_json = serde_json::to_value(settings.billing.clone().censored())
             .unwrap_or(serde_json::Value::Null);
         settings.save().await?;
 
@@ -140,6 +233,192 @@ mod put_pricing {
             .await;
 
         ApiResponse::new_serialized(Response {}).ok()
+    }
+}
+
+mod get_stripe {
+    use shared::{
+        GetState,
+        models::user::GetPermissionManager,
+        response::{ApiResponse, ApiResponseResult},
+    };
+    use utoipa::ToSchema;
+
+    #[utoipa::path(get, path = "/stripe", responses(
+        (status = OK, body = super::StripeSettingsResponse),
+    ))]
+    pub async fn route(state: GetState, permissions: GetPermissionManager) -> ApiResponseResult {
+        permissions.has_admin_permission("billing.read")?;
+
+        let billing = state.settings.get_as(|s| s.billing.clone()).await?;
+
+        ApiResponse::new_serialized(super::stripe_settings_response(&billing)).ok()
+    }
+}
+
+mod put_stripe {
+    use axum::http::StatusCode;
+    use garde::Validate;
+    use serde::Deserialize;
+    use shared::{
+        ApiError, GetState,
+        models::{admin_activity::GetAdminActivityLogger, user::GetPermissionManager},
+        response::{ApiResponse, ApiResponseResult},
+        settings::billing::AppSettingsBilling,
+    };
+    use utoipa::ToSchema;
+
+    #[derive(ToSchema, Validate, Deserialize)]
+    pub struct Payload {
+        /// New secret key (`sk_test_…`). `None` = leave unchanged;
+        /// `""` = clear the stored key; the masked value returned by
+        /// `GET /stripe` = leave unchanged. Live keys are refused.
+        #[garde(skip)]
+        pub stripe_secret_key: Option<String>,
+        /// New webhook secret (`whsec_…`). Same `None` / `""` /
+        /// masked-value rules as the secret key.
+        #[garde(skip)]
+        pub stripe_webhook_secret: Option<String>,
+        /// New publishable key (`pk_test_…`). `None` = leave unchanged;
+        /// `""` = clear. Returned in full by `GET /stripe`: it is
+        /// public by design.
+        #[garde(skip)]
+        pub stripe_publishable_key: Option<String>,
+        /// New checkout URL template. `None` = leave unchanged; `""` =
+        /// reset to the default template. Must contain `{session_id}`.
+        #[garde(skip)]
+        pub checkout_url_template: Option<String>,
+    }
+
+    #[utoipa::path(put, path = "/stripe", responses(
+        (status = OK, body = super::StripeSettingsResponse),
+        (status = BAD_REQUEST, body = ApiError),
+    ), request_body = inline(Payload))]
+    pub async fn route(
+        state: GetState,
+        permissions: GetPermissionManager,
+        activity_logger: GetAdminActivityLogger,
+        shared::Payload(data): shared::Payload<Payload>,
+    ) -> ApiResponseResult {
+        if let Err(errors) = shared::utils::validate_data(&data) {
+            return ApiResponse::new_serialized(ApiError::new_strings_value(errors))
+                .with_status(StatusCode::BAD_REQUEST)
+                .ok();
+        }
+
+        permissions.has_admin_permission("billing.update")?;
+
+        // Validate everything before mutating anything, so a bad field
+        // cannot leave a half-applied update behind.
+        if let Some(secret_key) = data.stripe_secret_key.as_deref()
+            && !secret_key.is_empty()
+            && !AppSettingsBilling::is_masked_secret(secret_key)
+            && !secret_key.starts_with("sk_test_")
+        {
+            return ApiResponse::error(
+                "stripe secret key must start with sk_test_ — live keys are refused (test mode only)",
+            )
+            .with_status(StatusCode::BAD_REQUEST)
+            .ok();
+        }
+        if let Some(publishable_key) = data.stripe_publishable_key.as_deref()
+            && !publishable_key.is_empty()
+            && !publishable_key.starts_with("pk_test_")
+        {
+            return ApiResponse::error(
+                "stripe publishable key must start with pk_test_ — live keys are refused (test mode only)",
+            )
+            .with_status(StatusCode::BAD_REQUEST)
+            .ok();
+        }
+        if let Some(template) = data.checkout_url_template.as_deref()
+            && !template.is_empty()
+            && !template.contains("{session_id}")
+        {
+            return ApiResponse::error("checkout URL template must contain {session_id}")
+                .with_status(StatusCode::BAD_REQUEST)
+                .ok();
+        }
+        if let Some(template) = data.checkout_url_template.as_deref()
+            && template.chars().count() > 1024
+        {
+            return ApiResponse::error("checkout URL template is too long")
+                .with_status(StatusCode::BAD_REQUEST)
+                .ok();
+        }
+
+        let mut settings = state.settings.get_mut().await?;
+
+        // Per-field outcome, for the activity log. No secret value —
+        // not even a masked one — is ever logged.
+        let mut secret_changed = false;
+        let mut webhook_changed = false;
+        let mut publishable_changed = false;
+        let mut template_changed = false;
+
+        if let Some(secret_key) = data.stripe_secret_key.as_deref() {
+            if secret_key.is_empty() {
+                if settings.billing.stripe_secret_key.take().is_some() {
+                    secret_changed = true;
+                }
+            } else if !AppSettingsBilling::is_masked_secret(secret_key) {
+                settings.billing.stripe_secret_key = Some(secret_key.into());
+                secret_changed = true;
+            }
+            // A masked value is the UI sending back what it was shown:
+            // leave the stored secret untouched.
+        }
+        if let Some(webhook_secret) = data.stripe_webhook_secret.as_deref() {
+            if webhook_secret.is_empty() {
+                if settings.billing.stripe_webhook_secret.take().is_some() {
+                    webhook_changed = true;
+                }
+            } else if !AppSettingsBilling::is_masked_secret(webhook_secret) {
+                settings.billing.stripe_webhook_secret = Some(webhook_secret.into());
+                webhook_changed = true;
+            }
+        }
+        if let Some(publishable_key) = data.stripe_publishable_key.as_deref() {
+            if publishable_key.is_empty() {
+                if settings.billing.stripe_publishable_key.take().is_some() {
+                    publishable_changed = true;
+                }
+            } else {
+                settings.billing.stripe_publishable_key = Some(publishable_key.into());
+                publishable_changed = true;
+            }
+        }
+        if let Some(template) = data.checkout_url_template.as_deref() {
+            if template.is_empty() {
+                if settings.billing.checkout_url_template.as_str()
+                    != AppSettingsBilling::DEFAULT_CHECKOUT_URL_TEMPLATE
+                {
+                    settings.billing.checkout_url_template =
+                        AppSettingsBilling::DEFAULT_CHECKOUT_URL_TEMPLATE.into();
+                    template_changed = true;
+                }
+            } else if settings.billing.checkout_url_template.as_str() != template {
+                settings.billing.checkout_url_template = template.into();
+                template_changed = true;
+            }
+        }
+
+        let response = super::stripe_settings_response(&settings.billing);
+        settings.save().await?;
+
+        activity_logger
+            .log(
+                "billing:stripe.update",
+                serde_json::json!({
+                    "stripe_secret_key_changed": secret_changed,
+                    "stripe_webhook_secret_changed": webhook_changed,
+                    "stripe_publishable_key_changed": publishable_changed,
+                    "checkout_url_template_changed": template_changed,
+                }),
+            )
+            .await;
+
+        ApiResponse::new_serialized(response).ok()
     }
 }
 
@@ -426,6 +705,8 @@ pub fn router(state: &State) -> OpenApiRouter<State> {
     OpenApiRouter::new()
         .routes(routes!(get_pricing::route))
         .routes(routes!(put_pricing::route))
+        .routes(routes!(get_stripe::route))
+        .routes(routes!(put_stripe::route))
         .routes(routes!(get_balances::route))
         .routes(routes!(get_transactions::route))
         .nest("/users/{user}", user::router(state))

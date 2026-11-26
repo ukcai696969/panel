@@ -393,6 +393,44 @@ export const adminSettingsMetadataSchema = z.object({
     .max(10),
 });
 
+const cidrSchema = z.cidrv4().or(z.cidrv6());
+
+export const adminSettingsAdvancedSchema = z.object({
+  // Blank = unset: the environment variable governs (the PUT route treats
+  // a submitted `null` as "clear the stored value"). See
+  // `shared/src/settings/advanced.rs` for the live-vs-restart status of
+  // each field — only `requestLogLimit` applies without a restart.
+  passwordAlgorithm: z.preprocess(nullableString, z.enum(['bcrypt', 'argon2id']).nullable()),
+  passwordBcryptCost: z.preprocess(nullableNumber, z.number().min(10).max(16).nullable()),
+  passwordArgon2MemoryMib: z.preprocess(nullableNumber, z.number().min(19).max(1024).nullable()),
+  passwordArgon2Iterations: z.preprocess(nullableNumber, z.number().min(1).max(16).nullable()),
+  // `null` from the API means unset; the form hydrates it to the panel's
+  // built-in default list (blocked) or an empty list (trusted proxies).
+  blockedCidrs: z.array(cidrSchema).max(256).nullable(),
+  trustedProxies: z.array(cidrSchema).max(256).nullable(),
+  requestLogLimit: z.preprocess(nullableNumber, z.number().min(0).nullable()),
+  sentryUrl: z.preprocess(nullableString, z.url({ protocol: /^https?$/ }).max(512).nullable()),
+  sentryTracingSampleRate: z.preprocess(nullableNumber, z.number().min(0).max(1).nullable()),
+  // Switches always save an explicit value once the tab is saved: a `null`
+  // from the API is hydrated to the built-in default below, not to the
+  // environment value in force — see `advancedFormValues.tsx`.
+  enableWingsProxy: z.boolean().nullable(),
+  useDecryptionCache: z.boolean().nullable(),
+  useInternalCache: z.boolean().nullable(),
+});
+
+export const adminSettingsEnvironmentEntrySchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  set: z.boolean(),
+  secret: z.boolean(),
+  value: z.string().nullable(),
+});
+
+export const adminSettingsEnvironmentSchema = z.object({
+  entries: z.array(adminSettingsEnvironmentEntrySchema),
+});
+
 export const adminSettingsUpdatesSchema = z.object({
   wingsReleaseToken: z.preprocess(nullableString, z.string().min(1).max(1024).nullable()),
   dbAgentReleaseToken: z.preprocess(nullableString, z.string().min(1).max(1024).nullable()),
@@ -415,4 +453,5 @@ export const adminSettingsSchema = z.object({
   activity: adminSettingsActivitySchema,
   ratelimits: adminSettingsRatelimitsSchema,
   updates: adminSettingsUpdatesSchema,
+  advanced: adminSettingsAdvancedSchema,
 });

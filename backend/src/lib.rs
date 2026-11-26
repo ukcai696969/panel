@@ -105,7 +105,19 @@ pub async fn handle_request(
     req.extensions_mut().insert(ip);
     req.extensions_mut().insert(shared::RequestHost(host));
 
-    let limit = state.env.app_request_log_limit;
+    // The request-log limit is the one advanced setting with a live consumer:
+    // it is resolved from settings on every request (`Settings::get_as`
+    // serves the cached buffer, so this is a cheap `ArcSwap` read, not a
+    // database hit), falling back to the env var when the setting is unset
+    // or settings cannot be read. Every other advanced field is
+    // restart-only — see `shared/src/settings/advanced.rs`.
+    let limit = state
+        .settings
+        .get_as(|settings| settings.advanced.request_log_limit)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(state.env.app_request_log_limit);
     let (log, suppressed) = if limit == 0 {
         (true, 0)
     } else {

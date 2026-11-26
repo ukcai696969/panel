@@ -5,7 +5,9 @@
 // reach it without a panel login.
 //
 // Security, in order:
-//   1. `STRIPE_WEBHOOK_SECRET` must be set, or every request is 403.
+//   1. `STRIPE_WEBHOOK_SECRET` must be set (in settings or the
+//      environment — see `crate::billing::StripeConfig::resolve`), or
+//      every request is 403.
 //   2. The `Stripe-Signature` header must verify (HMAC-SHA256, see
 //      `crate::billing::verify_stripe_signature`), or the request is 400.
 //   3. A purchase is credited exactly once per Stripe checkout session
@@ -64,7 +66,9 @@ struct StripeSessionMetadata {
 }
 
 pub async fn route(state: GetState, headers: HeaderMap, body: Bytes) -> ApiResponseResult {
-    let Some(config) = crate::billing::StripeConfig::from_env() else {
+    // Resolved from settings with the environment as an override,
+    // so a saved webhook secret takes effect without a restart.
+    let Some(config) = crate::billing::StripeConfig::resolve(&state.settings).await? else {
         return ApiResponse::error("stripe is not configured")
             .with_status(StatusCode::FORBIDDEN)
             .ok();

@@ -3,16 +3,18 @@
 // STRIPE IS A STUB IN THIS FIRST VERSION. There is deliberately no live
 // Stripe API call anywhere in this file:
 //   * `create_checkout_session_stub` only mints a local `cs_test_stub_…`
-//     session id and returns a checkout URL built from the
-//     `BILLING_CHECKOUT_URL_TEMPLATE` environment variable. No money
+//     session id and returns a checkout URL built from the resolved
+//     checkout URL template (settings, or the
+//     `BILLING_CHECKOUT_URL_TEMPLATE` environment variable). No money
 //     moves until a real Stripe integration replaces this function with
 //     a call to Stripe's Checkout Sessions API (test mode first) and the
 //     webhook below starts receiving real `checkout.session.completed`
 //     events.
 //   * The webhook DOES verify the Stripe signature (HMAC-SHA256, Stripe's
-//     `t=…,v1=…` header format) when `STRIPE_WEBHOOK_SECRET` is set, and
-//     rejects everything when it is not set. That verification is real
-//     and must stay in place when the stub is replaced.
+//     `t=…,v1=…` header format) when `STRIPE_WEBHOOK_SECRET` is set (in
+//     settings or the environment), and rejects everything when it is
+//     not set. That verification is real and must stay in place when
+//     the stub is replaced.
 //   * Live keys are refused: a secret key must start with `sk_test_`.
 //     A `sk_live_` key is an error, never a charge.
 //
@@ -20,6 +22,7 @@
 
 use chrono::Timelike;
 use sha2::{Digest, Sha256};
+use shared::settings::billing::AppSettingsBilling;
 use shared::models::{
     server::Server,
     server_activity::{CreateServerActivityOptions, ServerActivity},
@@ -28,26 +31,119 @@ use shared::models::{
     user_credit_transaction::UserCreditTransactionKind,
 };
 
-/// Stripe configuration, read from the environment at request time.
-/// Nothing here is ever stored in settings or the database.
+/// Stripe configuration, resolved at request time.
+///
+/// Precedence, per value (highest first):
+///   1. the matching environment variable, when set and non-empty
+///      (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`,
+///      `STRIPE_PUBLISHABLE_KEY`, `BILLING_CHECKOUT_URL_TEMPLATE`);
+///   2. the stored settings value (`AppSettingsBilling` — the secret
+///      key and webhook secret are encrypted at rest, the publishable
+///      key and checkout URL template are not secret);
+///   3. the built-in default (checkout URL template only).
+///
+/// An environment variable that is set but empty (or whitespace-only)
+/// counts as unset. Settings are live (60 s cache, see
+/// `shared::settings`), so a saved key takes effect without a restart
+/// — unless the matching env var is set, in which case the saved value
+/// is shadowed until the env var is removed. Returns `None` when no
+/// secret key resolves from either source: Stripe is not configured.
 pub struct StripeConfig {
     pub secret_key: String,
     pub webhook_secret: Option<String>,
     pub publishable_key: Option<String>,
+    /// Resolved template; never empty (falls back to
+    /// [`AppSettingsBilling::DEFAULT_CHECKOUT_URL_TEMPLATE`]).
+    pub checkout_url_template: String,
 }
 
 impl StripeConfig {
+    /// An environment variable's value, ignoring unset, empty and
+    /// whitespace-only values.
+    fn env_var(name: &str) -> Option<String> {
+        std::env::var(name).ok().filter(|value| !value.trim().is_empty())
+    }
+
+    /// Environment only. Kept for callers/tests that need the env
+    /// view; request handlers should use [`Self::resolve`] instead.
     pub fn from_env() -> Option<Self> {
-        let secret_key = std::env::var("STRIPE_SECRET_KEY").ok()?;
+        let secret_key = Self::env_var("STRIPE_SECRET_KEY")?;
+
+        Some(Self {
+            secret_key,
+            webhook_secret: Self::env_var("STRIPE_WEBHOOK_SECRET"),
+            publishable_key: Self::env_var("STRIPE_PUBLISHABLE_KEY"),
+            checkout_url_template: Self::env_var("BILLING_CHECKOUT_URL_TEMPLATE")
+                .unwrap_or_else(|| AppSettingsBilling::DEFAULT_CHECKOUT_URL_TEMPLATE.to_string()),
+        })
+    }
+
+    /// Stored settings only, ignoring the environment.
+    pub fn from_billing(billing: &AppSettingsBilling) -> Option<Self> {
+        let secret_key = billing.stripe_secret_key.as_ref()?.to_string();
         if secret_key.trim().is_empty() {
             return None;
         }
 
         Some(Self {
             secret_key,
-            webhook_secret: std::env::var("STRIPE_WEBHOOK_SECRET").ok(),
-            publishable_key: std::env::var("STRIPE_PUBLISHABLE_KEY").ok(),
+            webhook_secret: billing
+                .stripe_webhook_secret
+                .as_ref()
+                .map(|secret| secret.to_string()),
+            publishable_key: billing
+                .stripe_publishable_key
+                .as_ref()
+                .map(|key| key.to_string()),
+            checkout_url_template: if billing.checkout_url_template.trim().is_empty() {
+                AppSettingsBilling::DEFAULT_CHECKOUT_URL_TEMPLATE.to_string()
+            } else {
+                billing.checkout_url_template.to_string()
+            },
         })
+    }
+
+    /// Settings merged with the environment: env wins per value when
+    /// set, otherwise the stored settings value is used.
+    pub fn resolve_from(billing: &AppSettingsBilling) -> Option<Self> {
+        let secret_key = Self::env_var("STRIPE_SECRET_KEY").or_else(|| {
+            billing
+                .stripe_secret_key
+                .as_ref()
+                .map(|secret| secret.to_string())
+        })?;
+        if secret_key.trim().is_empty() {
+            return None;
+        }
+
+        Some(Self {
+            secret_key,
+            webhook_secret: Self::env_var("STRIPE_WEBHOOK_SECRET").or_else(|| {
+                billing
+                    .stripe_webhook_secret
+                    .as_ref()
+                    .map(|secret| secret.to_string())
+            }),
+            publishable_key: Self::env_var("STRIPE_PUBLISHABLE_KEY").or_else(|| {
+                billing
+                    .stripe_publishable_key
+                    .as_ref()
+                    .map(|key| key.to_string())
+            }),
+            checkout_url_template: Self::env_var("BILLING_CHECKOUT_URL_TEMPLATE")
+                .or_else(|| Some(billing.checkout_url_template.to_string()))
+                .filter(|template| !template.trim().is_empty())
+                .unwrap_or_else(|| AppSettingsBilling::DEFAULT_CHECKOUT_URL_TEMPLATE.to_string()),
+        })
+    }
+
+    /// Resolve from the live settings, with the environment as an
+    /// override per value. This is what request handlers use.
+    pub async fn resolve(
+        settings: &shared::settings::Settings,
+    ) -> Result<Option<Self>, anyhow::Error> {
+        let billing = settings.get_as(|s| s.billing.clone()).await?;
+        Ok(Self::resolve_from(&billing))
     }
 
     /// Test mode only in v1. A live key must never reach the stub: it
@@ -57,7 +153,7 @@ impl StripeConfig {
             Ok(())
         } else {
             Err(anyhow::anyhow!(
-                "billing is test-mode only: STRIPE_SECRET_KEY must start with sk_test_"
+                "billing is test-mode only: STRIPE_SECRET_KEY (settings or environment) must start with sk_test_"
             ))
         }
     }
@@ -72,21 +168,26 @@ pub struct CheckoutSession {
 }
 
 /// STUB — see the module docs. Mints a local test session id and builds
-/// the checkout URL from `BILLING_CHECKOUT_URL_TEMPLATE`, which may use
-/// `{session_id}`, `{credits}` and `{app_url}`. Default template sends
-/// the user back to their billing page with the session id attached, so
-/// the flow can be exercised end-to-end without Stripe.
+/// the checkout URL from `checkout_url_template` (the resolved template:
+/// settings `billing::checkout_url_template`, overridden by
+/// `BILLING_CHECKOUT_URL_TEMPLATE` — see [`StripeConfig::resolve`]),
+/// which may use `{session_id}`, `{credits}` and `{app_url}`. Default
+/// template sends the user back to their billing page with the session
+/// id attached, so the flow can be exercised end-to-end without Stripe.
 pub fn create_checkout_session_stub(
     app_url: &str,
     credits: i64,
     currency: &str,
+    checkout_url_template: &str,
 ) -> Result<CheckoutSession, anyhow::Error> {
     let _ = currency;
     let session_id = format!("cs_test_stub_{}", uuid::Uuid::new_v4());
 
-    let template = std::env::var("BILLING_CHECKOUT_URL_TEMPLATE").unwrap_or_else(|_| {
-        "{app_url}/account/billing?checkout_session={session_id}".to_string()
-    });
+    let template = if checkout_url_template.trim().is_empty() {
+        AppSettingsBilling::DEFAULT_CHECKOUT_URL_TEMPLATE
+    } else {
+        checkout_url_template
+    };
 
     let checkout_url = template
         .replace("{session_id}", &session_id)
