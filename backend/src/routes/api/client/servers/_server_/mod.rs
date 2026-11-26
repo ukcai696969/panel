@@ -22,6 +22,7 @@ mod alerts;
 mod allocations;
 mod announcements;
 mod backups;
+mod clone;
 mod command;
 mod databases;
 mod devices;
@@ -68,6 +69,10 @@ pub async fn auth(
         "/api/client/servers/{server}/websocket",
         "/api/client/servers/{server}/settings/install/cancel",
         "/api/client/servers/{server}/backups/unlock",
+        // Cloning a suspended server is legitimate (the clone itself starts
+        // unsuspended); Server::clone_server still refuses a server that is
+        // transferring, or file copies from an installing/restoring one.
+        "/api/client/servers/{server}/clone",
     ];
 
     // anyone allowed to update servers stays able to act on a suspended one, which is what suspension is for
@@ -151,6 +156,7 @@ pub fn router(state: &State) -> OpenApiRouter<State> {
         .nest("/startup", startup::router(state))
         .nest("/subusers", subusers::router(state))
         .nest("/backups", backups::router(state))
+        .nest("/clone", clone::router(state))
         .nest("/allocations", allocations::router(state))
         .nest("/firewall", firewall::router(state))
         .nest("/tunnel", tunnel::router(state))

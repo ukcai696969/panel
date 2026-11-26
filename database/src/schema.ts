@@ -1521,6 +1521,26 @@ export const serversTable = pgTable(
   ],
 );
 
+export const serverTemplatesTable = pgTable(
+  'server_templates',
+  {
+    uuid: uuid().default(sql`gen_random_uuid()`).primaryKey().notNull(),
+    name: varchar({ length: 255 }).notNull(),
+    description: varchar({ length: 1024 }),
+    owner_uuid: uuid().references(() => usersTable.uuid, { onDelete: 'cascade' }),
+    source_server_uuid: uuid().references(() => serversTable.uuid, { onDelete: 'set null' }),
+    snapshot: jsonb().notNull(),
+    created: timestamp().defaultNow().notNull(),
+    updated: timestamp().defaultNow().notNull(),
+  },
+  (cols) => [
+    uniqueIndex('server_templates_owner_name_idx').on(cols.owner_uuid, cols.name),
+    uniqueIndex('server_templates_global_name_idx').on(cols.name).where(sql`${cols.owner_uuid} IS NULL`),
+    index('server_templates_owner_idx').on(cols.owner_uuid),
+    index('server_templates_source_server_idx').on(cols.source_server_uuid),
+  ],
+);
+
 export const serverAllocationsTable = pgTable(
   'server_allocations',
   {

@@ -1,7 +1,7 @@
 import { StateCreator } from 'zustand';
 import { AdminStore } from '@/stores/admin.tsx';
 
-export type AdminServerModal = 'transfer' | 'suspend' | 'unsuspend' | 'clear-state' | 'delete';
+export type AdminServerModal = 'transfer' | 'suspend' | 'unsuspend' | 'clear-state' | 'delete' | 'clone';
 
 export interface ServerSlice {
   serverModal: AdminServerModal | null;

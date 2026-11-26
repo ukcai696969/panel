@@ -24,6 +24,7 @@ mod account;
 mod billing;
 mod permissions;
 pub mod servers;
+mod server_templates;
 mod teams;
 
 fn check_account_gates(
@@ -433,6 +434,7 @@ pub fn router(state: &State) -> OpenApiRouter<State> {
     OpenApiRouter::new()
         .nest("/account", account::router(state))
         .nest("/servers", servers::router(state))
+        .nest("/server-templates", server_templates::router(state))
         .nest("/teams", teams::router(state))
         .nest("/billing", billing::router(state))
         .nest("/permissions", permissions::router(state))

@@ -4,9 +4,11 @@ import ExtensionSlot from '@/elements/ExtensionSlot.tsx';
 import { useTranslations } from '@/providers/TranslationProvider.tsx';
 import AutokillContainer from './AutokillContainer.tsx';
 import AutostartContainer from './AutostartContainer.tsx';
+import CloneServerContainer from './CloneServerContainer.tsx';
 import DebugInformationContainer from './DebugInformationContainer.tsx';
 import ReinstallContainer from './ReinstallContainer.tsx';
 import RenameContainer from './RenameContainer.tsx';
+import SaveAsTemplateContainer from './SaveAsTemplateContainer.tsx';
 import TimezoneContainer from './TimezoneContainer.tsx';
 import TrashContainer from './TrashContainer.tsx';
 
@@ -45,6 +47,9 @@ export default function ServerSettings() {
         <ServerCan action='settings.install'>
           <ReinstallContainer />
         </ServerCan>
+        {/* Clone / Save-as-template render nothing unless the viewer owns the server. */}
+        <CloneServerContainer />
+        <SaveAsTemplateContainer />
 
         <ExtensionSlot
           components={

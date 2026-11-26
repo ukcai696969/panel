@@ -1,4 +1,4 @@
-import { faPlugCircleCheck, faPlugCircleXmark, faReply, faSatellite, faTrash } from '@fortawesome/free-solid-svg-icons';
+import { faClone, faPlugCircleCheck, faPlugCircleXmark, faReply, faSatellite, faTrash } from '@fortawesome/free-solid-svg-icons';
 import type { IconLike } from '@/elements/data-display/Icon.tsx';
 import type { AdminServerModal } from '@/stores/slices/admin/server.ts';
 import { AdminServer } from '@/lib/schemas/admin/servers.ts';
@@ -9,7 +9,7 @@ const mgmt = 'pages.admin.servers.tabs.management.page';
 const palette = 'pages.admin.servers.quickAction';
 
 export interface ServerManagementAction {
-  id: 'transfer' | 'suspend' | 'unsuspend' | 'clearState' | 'delete';
+  id: 'transfer' | 'suspend' | 'unsuspend' | 'clearState' | 'delete' | 'clone';
   modal: AdminServerModal;
   icon: IconLike;
   color: 'blue' | 'green' | 'red';
@@ -28,11 +28,17 @@ export function useServerManagementActions(server: AdminServer): ServerManagemen
   const canTransfer = useAdminCan(['servers.transfer', 'nodes.read'], false);
   const canUpdate = useAdminCan('servers.update');
   const canDelete = useAdminCan('servers.delete');
+  const canCreate = useAdminCan('servers.create');
 
   const transferBlockedReason = server.isTransferring
     ? t(`${mgmt}.transfer.tooltip.alreadyTransferring`, {})
     : server.status === 'installing' || server.status === 'restoring_backup'
       ? t(`${mgmt}.transfer.tooltip.busy`, {})
+      : undefined;
+
+  const cloneBlockedReason =
+    server.isTransferring
+      ? t(`${mgmt}.clone.tooltip.alreadyTransferring`, {})
       : undefined;
 
   const actions: (ServerManagementAction | false)[] = [
@@ -49,6 +55,20 @@ export function useServerManagementActions(server: AdminServer): ServerManagemen
       cardContent: t(`${mgmt}.transfer.content`, {}),
       cardButtonLabel: t('common.button.transfer', {}),
       disabledReason: transferBlockedReason,
+    },
+    canCreate && {
+      id: 'clone',
+      modal: 'clone',
+      icon: faClone,
+      color: 'blue',
+      danger: false,
+      orderClass: 'order-15',
+      paletteLabel: t(`${palette}.clone`, {}),
+      paletteKeywords: ['copy', 'duplicate', 'template'],
+      cardTitle: t(`${mgmt}.clone.title`, {}),
+      cardContent: t(`${mgmt}.clone.content`, {}),
+      cardButtonLabel: t('common.button.clone', {}),
+      disabledReason: cloneBlockedReason,
     },
     canUpdate &&
       !server.isSuspended && {

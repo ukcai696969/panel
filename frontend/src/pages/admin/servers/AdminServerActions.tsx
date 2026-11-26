@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { CORE_QUICK_ACTION_CATEGORIES } from '@/lib/quickActions/coreQuickActions.tsx';
 import { AdminServer } from '@/lib/schemas/admin/servers.ts';
+import ServerCloneModal from '@/pages/admin/servers/management/modals/ServerCloneModal.tsx';
 import ServerConfirmActionModal from '@/pages/admin/servers/management/modals/ServerConfirmActionModal.tsx';
 import ServerDeleteModal from '@/pages/admin/servers/management/modals/ServerDeleteModal.tsx';
 import ServerTransferModal from '@/pages/admin/servers/management/modals/ServerTransferModal.tsx';
@@ -53,6 +54,7 @@ export default function AdminServerActions({ server }: { server: AdminServer }) 
   return (
     <>
       {canTransfer && <ServerTransferModal server={server} opened={openModal === 'transfer'} onClose={doCloseModal} />}
+      <ServerCloneModal server={server} opened={openModal === 'clone'} onClose={doCloseModal} />
       <ServerConfirmActionModal
         server={server}
         action='suspend'

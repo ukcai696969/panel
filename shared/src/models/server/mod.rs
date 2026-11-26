@@ -18,6 +18,9 @@ use utoipa::ToSchema;
 mod events;
 pub use events::ServerEvent;
 
+mod clone;
+pub use clone::CloneServerOptions;
+
 pub mod firewall;
 
 pub type GetServer = crate::extract::ConsumingExtension<Server>;

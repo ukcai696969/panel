@@ -681,6 +681,18 @@ pub(crate) static BASE_ADMIN_PERMISSIONS: LazyLock<IndexMap<&'static str, Permis
                     ]),
                 },
             ),
+            (
+                "server-templates",
+                PermissionGroup {
+                    description: "Permissions that control the ability to manage server templates.",
+                    permissions: IndexMap::from([
+                        ("create", "Allows creating server templates."),
+                        ("read", "Allows viewing server templates."),
+                        ("update", "Allows modifying server templates."),
+                        ("delete", "Allows deleting server templates."),
+                    ]),
+                },
+            ),
         ])
     });
 

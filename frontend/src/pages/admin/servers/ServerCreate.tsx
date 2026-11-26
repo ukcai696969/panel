@@ -59,6 +59,7 @@ import { useAdminCan } from '@/plugins/usePermissions.ts';
 import { useToast } from '@/providers/ToastProvider.tsx';
 import { useTranslations } from '@/providers/TranslationProvider.tsx';
 import { serverCreateEmptyFormValues, useEggDefaults, useServerFormFields } from './serverFormValues.tsx';
+import ServerTemplatePicker from './ServerTemplatePicker.tsx';
 
 type ServerCreateFormValues = z.infer<typeof adminServerCreateFormSchema>;
 
@@ -354,6 +355,26 @@ export default function ServerCreate() {
           )}
 
           <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
+            <TitleCard title={t('pages.admin.servers.tabs.general.page.card.template.title', {})}>
+              <ServerTemplatePicker
+                onSelect={(template) => {
+                  const snapshot = template.snapshot;
+                  form.setFieldValue('eggUuid', snapshot.eggUuid);
+                  form.setFieldValue('startup', snapshot.startup);
+                  form.setFieldValue('image', snapshot.image);
+                  form.setFieldValue('limits', snapshot.limits);
+                  form.setFieldValue('featureLimits', snapshot.featureLimits);
+                  form.setFieldValue('description', template.description ?? '');
+                  form.setFieldValue(
+                    'variables',
+                    Object.entries(snapshot.variables).map(([envVariable, value]) => ({ envVariable, value })),
+                  );
+                  // Node, owner and allocations are intentionally left blank: the admin
+                  // still picks them, and allocations are always fresh.
+                }}
+              />
+            </TitleCard>
+
             <TitleCard title={t('pages.admin.servers.tabs.general.page.card.basicInformation', {})} icon={faInfoCircle}>
               <FormEngine form={form} fields={basicInfoFields} />
             </TitleCard>

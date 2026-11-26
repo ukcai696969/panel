@@ -72,6 +72,7 @@ const baseTranslations = defineTranslations({
         upgrade: 'Upgrade',
         close: 'Close',
         copy: 'Copy',
+        clone: 'Clone',
         cancel: 'Cancel',
         continue: 'Continue',
         skip: 'Skip',
@@ -4280,6 +4281,7 @@ const baseTranslations = defineTranslations({
             suspend: 'Suspend Server',
             unsuspend: 'Unsuspend Server',
             clearState: 'Clear Server State',
+            clone: 'Clone Server',
             delete: 'Delete Server',
           },
           bulkActions: {
@@ -4388,6 +4390,13 @@ const baseTranslations = defineTranslations({
                 titleUpdate: 'Update Server',
                 card: {
                   basicInformation: 'Basic Information',
+                  template: {
+                    title: 'From Template',
+                    description:
+                      'Start from a saved server template to prefill the egg, startup command, image, limits and variables.',
+                    label: 'Server Template',
+                    placeholder: 'Select a template',
+                  },
                   serverAssignment: 'Server Assignment',
                   resourceLimits: 'Resource Limits',
                   serverConfiguration: 'Server Configuration',
@@ -4662,6 +4671,32 @@ const baseTranslations = defineTranslations({
                         notAllBackupsSelected:
                           'You have not selected all backups to transfer, the remaining backups will become partially detached if the transfer completes successfully.',
                       },
+                    },
+                  },
+                },
+                clone: {
+                  title: 'Clone',
+                  content:
+                    'Create a copy of this server with the same egg, startup command, image, limits and variables. Allocations are always picked fresh.',
+                  tooltip: {
+                    alreadyTransferring: 'This server is already being transferred.',
+                  },
+                  toast: {
+                    cloned: 'Server {name} cloned.',
+                  },
+                  modal: {
+                    title: 'Clone Server',
+                    description: 'Clone **{name}**? The new server gets fresh allocations and starts unsuspended.',
+                    form: {
+                      includeSchedules: 'Include schedules',
+                      includeSchedulesDescription: 'Copy the schedules and their steps to the new server.',
+                      includeFiles: 'Include files',
+                      includeFilesDescription: 'Copy the server files to the new server via a temporary backup.',
+                      startOnCompletion: 'Start the server after cloning has finished',
+                    },
+                    alert: {
+                      filesCopy:
+                        'Copying files creates a temporary backup of the source server and restores it onto the clone. This can take a while for large servers.',
                     },
                   },
                 },
@@ -9159,6 +9194,26 @@ const baseTranslations = defineTranslations({
               toast: {
                 reinstalling: 'Reinstalling server...',
               },
+            },
+          },
+          clone: {
+            title: 'Clone Server',
+            description:
+              'Create a copy of this server with the same configuration. Allocations are always picked fresh.',
+            includeSchedules: 'Include schedules',
+            includeFiles: 'Include files',
+            filesCopyNote:
+              'Copying files creates a temporary backup of this server and restores it onto the clone. This can take a while for large servers.',
+            toast: {
+              cloned: 'Server {name} cloned.',
+            },
+          },
+          saveAsTemplate: {
+            title: 'Save as Template',
+            description:
+              "Save this server's configuration as a personal template you can reuse when creating servers.",
+            toast: {
+              saved: 'Template {name} saved.',
             },
           },
         },
