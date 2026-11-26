@@ -9,6 +9,7 @@ import {
   faFolderTree,
   faNetworkWired,
   faPlay,
+  faPuzzlePiece,
   faStopwatch,
   faTerminal,
   faUsers,
@@ -44,6 +45,7 @@ const ServerAlerts = lazy(() => import('@/pages/server/alerts/ServerAlerts.tsx')
 const ServerFilesEditor = lazy(() => import('@/pages/server/files/editor/FileEditor.tsx'));
 const FileRevisionDiff = lazy(() => import('@/pages/server/files/editor/FileRevisionDiff.tsx'));
 const DatabaseInstanceView = lazy(() => import('@/pages/server/databases/instances/DatabaseInstanceView.tsx'));
+const ServerAddons = lazy(() => import('@/pages/server/addons/ServerAddons.tsx'));
 
 const routes: ServerRouteDefinition[] = [
   {
@@ -103,6 +105,16 @@ const routes: ServerRouteDefinition[] = [
     path: '/files/:action',
     element: ServerFilesEditor,
     permission: ['files.read-content', 'files.create'],
+  },
+  {
+    // One-click modpacks / plugins (Modrinth first, CurseForge second).
+    // Shown to anyone who can read files or create them; the install
+    // button itself is gated on `files.create` in the page.
+    name: () => 'Add-ons',
+    icon: faPuzzlePiece,
+    path: '/addons',
+    element: ServerAddons,
+    permission: ['files.read', 'files.create'],
   },
   {
     name: () => getTranslations().t('pages.server.databases.title', {}),

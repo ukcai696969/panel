@@ -17,6 +17,7 @@ use std::sync::Arc;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 mod activity;
+mod addons;
 mod alerts;
 mod allocations;
 mod announcements;
@@ -145,6 +146,7 @@ pub fn router(state: &State) -> OpenApiRouter<State> {
         .nest("/command", command::router(state))
         .nest("/power", power::router(state))
         .nest("/files", files::router(state))
+        .nest("/addons", addons::router(state))
         .nest("/settings", settings::router(state))
         .nest("/startup", startup::router(state))
         .nest("/subusers", subusers::router(state))
