@@ -1,5 +1,6 @@
 import type { AdminRouteDefinition } from 'shared';
 import {
+  faBell,
   faBriefcase,
   faBuilding,
   faBullhorn,
@@ -43,6 +44,7 @@ import AdminExtensionsExtension from '@/pages/admin/extensions/extension/AdminEx
 import AdminHome from '@/pages/admin/home/AdminHome.tsx';
 import AdminLocations from '@/pages/admin/locations/AdminLocations.tsx';
 import AdminMounts from '@/pages/admin/mounts/AdminMounts.tsx';
+import AdminNotifications from '@/pages/admin/notifications/AdminNotifications.tsx';
 import AdminNests from '@/pages/admin/nests/AdminNests.tsx';
 import AdminNodes from '@/pages/admin/nodes/AdminNodes.tsx';
 import AdminOAuthProviders from '@/pages/admin/oauth-providers/AdminOAuthProviders.tsx';
@@ -227,6 +229,14 @@ const routes: AdminRouteDefinition[] = [
     path: '/activity',
     element: AdminActivity,
     permission: ['activity.*'],
+    category: 'access',
+  },
+  {
+    name: () => getTranslations().t('pages.admin.notifications.title', {}),
+    icon: faBell,
+    path: '/notifications',
+    element: AdminNotifications,
+    permission: ['activity.read'],
     category: 'access',
   },
 

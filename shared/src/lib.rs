@@ -50,6 +50,7 @@ pub mod telemetry;
 pub mod tunnel;
 pub mod updates;
 pub mod utils;
+pub mod webhooks;
 
 pub use payload::Payload;
 pub use schema_extension_core::Extendible;

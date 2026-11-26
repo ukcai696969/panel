@@ -94,6 +94,9 @@ export const serverDatabaseInstanceStatusEnum = pgEnum('server_database_instance
 export const announcementTypeEnum = pgEnum('announcement_type', ['INFO', 'SUCCESS', 'WARNING', 'ERROR']);
 export const tunnelProtocolEnum = pgEnum('tunnel_protocol', ['TCP', 'UDP']);
 export const teamMemberManagementEnum = pgEnum('team_member_management', ['MEMBERS', 'PRESETS']);
+export const serverWebhookKindEnum = pgEnum('server_webhook_kind', ['DISCORD', 'GENERIC']);
+export const serverWebhookEventEnum = pgEnum('server_webhook_event', ['SERVER_CRASHED', 'SERVER_OFFLINE', 'SERVER_RECOVERED']);
+export const serverAlertKindEnum = pgEnum('server_alert_kind', ['CRASHED', 'OFFLINE', 'RECOVERED']);
 
 // Tables
 export const settingsTable = pgTable('settings', {
@@ -1662,6 +1665,65 @@ export const serverActivitiesTable = pgTable(
     index('server_activities_user_uuid_created_idx').on(cols.user_uuid, cols.created),
   ],
 );
+
+export const serverWebhooksTable = pgTable(
+  'server_webhooks',
+  {
+    uuid: uuid()
+      .default(sql`gen_random_uuid()`)
+      .primaryKey()
+      .notNull(),
+    server_uuid: uuid().references(() => serversTable.uuid, { onDelete: 'cascade' }),
+    name: varchar({ length: 255 }).notNull(),
+    kind: serverWebhookKindEnum().notNull(),
+    url: varchar({ length: 2048 }).notNull(),
+    events: serverWebhookEventEnum().array().notNull(),
+    enabled: boolean().default(true).notNull(),
+    secret: bytea(),
+    last_triggered_at: timestamp(),
+    failure_count: integer().default(0).notNull(),
+    created: timestamp().defaultNow().notNull(),
+  },
+  (cols) => [index('server_webhooks_server_uuid_idx').on(cols.server_uuid)],
+);
+
+export const serverAlertsTable = pgTable(
+  'server_alerts',
+  {
+    uuid: uuid()
+      .default(sql`gen_random_uuid()`)
+      .primaryKey()
+      .notNull(),
+    server_uuid: uuid()
+      .references(() => serversTable.uuid, { onDelete: 'cascade' })
+      .notNull(),
+    kind: serverAlertKindEnum().notNull(),
+    crash_id: bigint({ mode: 'number' }),
+    exit_code: integer(),
+    oom_killed: boolean().default(false).notNull(),
+    last_console: varchar({ length: 4096 }),
+    detected_at: timestamp().defaultNow().notNull(),
+    created: timestamp().defaultNow().notNull(),
+  },
+  (cols) => [
+    index('server_alerts_server_uuid_idx').on(cols.server_uuid),
+    index('server_alerts_detected_at_idx').on(cols.detected_at),
+    uniqueIndex('server_alerts_server_crash_idx')
+      .on(cols.server_uuid, cols.crash_id)
+      .where(sql`${cols.crash_id} IS NOT NULL`),
+  ],
+);
+
+export const serverAlertStatesTable = pgTable('server_alert_states', {
+  server_uuid: uuid()
+    .references(() => serversTable.uuid, { onDelete: 'cascade' })
+    .primaryKey()
+    .notNull(),
+  last_seen_state: varchar({ length: 32 }).notNull(),
+  last_seen_at: timestamp().defaultNow().notNull(),
+  last_crash_id: bigint({ mode: 'number' }),
+  last_alerted_at: timestamp(),
+});
 
 export const serverVariablesTable = pgTable(
   'server_variables',

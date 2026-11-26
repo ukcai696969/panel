@@ -229,6 +229,13 @@ const admin = {
     all: (userUuid: string | null) => ['admin', 'activity', { uuid: userUuid }] as const,
   },
 
+  alerts: {
+    all: () => ['admin', 'alerts'] as const,
+  },
+  webhooks: {
+    all: () => ['admin', 'webhooks'] as const,
+  },
+
   assets: {
     all: () => ['admin', 'assets'] as const,
   },
@@ -279,6 +286,12 @@ const server = (serverUuid: string) => ({
   crashes: {
     all: () => ['server', serverUuid, 'crashes'] as const,
     log: (crashId: number) => ['server', serverUuid, 'crashes', crashId, 'log'] as const,
+  },
+  webhooks: {
+    all: () => ['server', serverUuid, 'webhooks'] as const,
+  },
+  alerts: {
+    all: () => ['server', serverUuid, 'alerts'] as const,
   },
   backups: {
     all: () => ['server', serverUuid, 'backups'] as const,

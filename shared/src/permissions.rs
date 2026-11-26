@@ -669,6 +669,18 @@ pub(crate) static BASE_ADMIN_PERMISSIONS: LazyLock<IndexMap<&'static str, Permis
                     )]),
                 },
             ),
+            (
+                "webhooks",
+                PermissionGroup {
+                    description: "Permissions that control the ability to manage global crash-alert webhooks.",
+                    permissions: IndexMap::from([
+                        ("create", "Allows creating global crash-alert webhooks."),
+                        ("read", "Allows viewing global crash-alert webhooks."),
+                        ("update", "Allows modifying global crash-alert webhooks."),
+                        ("delete", "Allows deleting global crash-alert webhooks."),
+                    ]),
+                },
+            ),
         ])
     });
 
@@ -1052,6 +1064,18 @@ pub(crate) static BASE_SERVER_PERMISSIONS: LazyLock<IndexMap<&'static str, Permi
                             "read-ip",
                             "Allows viewing IP addresses associated with activity logs.",
                         ),
+                    ]),
+                },
+            ),
+            (
+                "webhooks",
+                PermissionGroup {
+                    description: "Permissions that control the ability to manage crash-alert webhooks for this server.",
+                    permissions: IndexMap::from([
+                        ("create", "Allows creating crash-alert webhooks for the server."),
+                        ("read", "Allows viewing crash-alert webhooks and the server's alert history."),
+                        ("update", "Allows modifying crash-alert webhooks for the server."),
+                        ("delete", "Allows deleting crash-alert webhooks from the server."),
                     ]),
                 },
             ),

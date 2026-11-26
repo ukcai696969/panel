@@ -9,8 +9,10 @@ use shared::models::{
     node::Node,
     oauth_provider_mapping::OAuthProviderMapping,
     server_activity::{CreateServerActivityOptions, ServerActivity},
+    server_alert::{CreateServerAlertOptions, ServerAlert, ServerAlertKind, ServerAlertState},
     server_backup::{BackupDisk, CreateServerBackupOptions, ServerBackup, ServerBackupKind},
     server_database_instance::ServerDatabaseInstance,
+    server_webhook::ServerWebhook,
     system_backup_policy::SystemBackupPolicy,
     system_backup_policy_run::SystemBackupPolicyRun,
     system_backup_policy_run_target::{
@@ -27,6 +29,7 @@ use shared::models::{
     user_session::UserSession,
     user_two_factor_code::UserTwoFactorCode,
 };
+use std::collections::HashMap;
 use std::str::FromStr;
 
 async fn database_instance_running(
@@ -845,6 +848,15 @@ pub async fn define_background_tasks(
                 }
             }
 
+            let deleted_server_alerts = ServerAlert::delete_older_than(
+                &state.database,
+                chrono::Utc::now() - chrono::Duration::days(server_retention_days as i64),
+            )
+            .await?;
+            if deleted_server_alerts > 0 {
+                tracing::info!("deleted {} old server alerts", deleted_server_alerts);
+            }
+
             Ok(())
         })
         .await;
@@ -1116,4 +1128,342 @@ pub async fn define_background_tasks(
             },
         )
         .await;
+    background_task_builder
+        .add_cron_task(
+            "check_server_crashes",
+            croner::Cron::from_str("0 * * * * *").unwrap(),
+            async |state| {
+                check_server_crashes(&state).await;
+                Ok(())
+            },
+        )
+        .await;
+}
+
+const CRASH_WATCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+struct Candidate {
+    uuid: uuid::Uuid,
+    node_uuid: uuid::Uuid,
+    name: compact_str::CompactString,
+    uuid_short: i32,
+}
+
+fn wings_state_name(state: wings_api::ServerState) -> &'static str {
+    match state {
+        wings_api::ServerState::Offline => "offline",
+        wings_api::ServerState::Starting => "starting",
+        wings_api::ServerState::Stopping => "stopping",
+        wings_api::ServerState::Running => "running",
+    }
+}
+
+/// One tick of the crash watcher, every 60 s.
+///
+/// Design notes (all deliberate):
+/// * One bulk `GET /servers/utilization` call per node, not one call
+///   per server. A node that errors, is in maintenance, or does not
+///   report a server is skipped entirely — its state row is NOT
+///   updated, so the next tick retries instead of false-alerting.
+/// * First sight of a server only records state, never alerts, so a
+///   panel restart cannot mass-alert for servers that are already down.
+/// * A running → offline transition only alerts as a *crash* when the
+///   Wings crash list holds a crash whose id was never alerted AND
+///   whose timestamp is newer than the last time we saw the server
+///   running. A clean stop has no such crash, so intentional stops
+///   never alert. (Wings crash detection itself is configured per egg
+///   via `crash_detection`.)
+/// * Exactly-once is enforced three ways: the `last_crash_id` /
+///   `last_alerted_at` state row, the `record_observation` upsert, and
+///   the partial unique index on `(server_uuid, crash_id)`.
+/// * The watcher logs `server:alert.sent` (NOT `server:crash.detected`).
+///   Verify first who already emits `server:crash.detected` — the
+///   frontend already links that event to the crash detail page, so if
+///   nothing else emits it, the watcher may use it instead; if
+///   something does, using it here would double-log.
+async fn check_server_crashes(state: &shared::State) {
+    let rows = match sqlx::query(
+        r#"
+        SELECT uuid, node_uuid, name, uuid_short FROM servers
+        WHERE NOT suspended AND status IS NULL AND destination_node_uuid IS NULL
+        "#,
+    )
+    .fetch_all(state.database.read())
+    .await
+    {
+        Ok(rows) => rows,
+        Err(err) => {
+            tracing::error!("failed to load servers for crash check: {err:#?}");
+            return;
+        }
+    };
+
+    let mut by_node: HashMap<uuid::Uuid, Vec<Candidate>> = HashMap::new();
+    for row in rows {
+        use sqlx::Row;
+        let candidate = Candidate {
+            uuid: row.try_get("uuid").unwrap_or_default(),
+            node_uuid: row.try_get("node_uuid").unwrap_or_default(),
+            name: row.try_get("name").unwrap_or_default(),
+            uuid_short: row.try_get("uuid_short").unwrap_or_default(),
+        };
+        by_node.entry(candidate.node_uuid).or_default().push(candidate);
+    }
+
+    for (node_uuid, servers) in by_node {
+        let node = match Node::by_uuid_optional_cached(&state.database, node_uuid).await {
+            Ok(Some(node)) => node,
+            Ok(None) => continue,
+            Err(err) => {
+                tracing::warn!(node = %node_uuid, "failed to load node for crash check: {err:#?}");
+                continue;
+            }
+        };
+        if node.maintenance_enabled {
+            continue;
+        }
+        let client = match node.api_client(&state.database).await {
+            Ok(client) => client,
+            Err(err) => {
+                tracing::warn!(node = %node_uuid, "failed to create wings client for crash check: {err:#?}");
+                continue;
+            }
+        };
+        let utilization = match tokio::time::timeout(
+            CRASH_WATCH_TIMEOUT,
+            client.get_servers_utilization(),
+        )
+        .await
+        {
+            Ok(Ok(utilization)) => utilization,
+            Ok(Err(err)) => {
+                tracing::warn!(node = %node_uuid, "failed to load server utilization for crash check: {err:#?}");
+                continue;
+            }
+            Err(_) => {
+                tracing::warn!(node = %node_uuid, "timed out loading server utilization for crash check");
+                continue;
+            }
+        };
+
+        for server in servers {
+            check_one_server(state, &node, &client, &server, &utilization).await;
+        }
+    }
+}
+
+async fn check_one_server(
+    state: &shared::State,
+    node: &Node,
+    client: &wings_api::client::WingsClient,
+    candidate: &Candidate,
+    utilization: &indexmap::IndexMap<uuid::Uuid, wings_api::ResourceUsage>,
+) {
+    let _ = node;
+    let Some(current) = utilization.get(&candidate.uuid) else {
+        return; // node does not report this server; do not touch state
+    };
+    let current_state = wings_state_name(current.state);
+
+    let previous = match ServerAlertState::previous(&state.database, candidate.uuid).await {
+        Ok(previous) => previous,
+        Err(err) => {
+            tracing::warn!(server = %candidate.uuid, "failed to load alert state: {err:#?}");
+            return;
+        }
+    };
+    let Some(previous) = previous else {
+        // First sight: record only, never alert.
+        let _ = ServerAlertState::record_observation(
+            &state.database, candidate.uuid, current_state, None, false,
+        )
+        .await;
+        return;
+    };
+
+    if current_state == "running" {
+        if previous.last_seen_state != "running" && previous.last_alerted_at.is_some() {
+            raise_alert(state, client, candidate, current_state, ServerAlertKind::Recovered, None).await;
+        } else {
+            let _ = ServerAlertState::record_observation(
+                &state.database, candidate.uuid, current_state, None, false,
+            )
+            .await;
+        }
+        return;
+    }
+
+    if current_state != "offline" || previous.last_seen_state != "running" {
+        // starting / stopping / still offline: record, do not alert.
+        let _ = ServerAlertState::record_observation(
+            &state.database, candidate.uuid, current_state, None, false,
+        )
+        .await;
+        return;
+    }
+
+    // running -> offline: confirm against the Wings crash list.
+    let crashes = match tokio::time::timeout(
+        CRASH_WATCH_TIMEOUT,
+        client.get_servers_server_logs_crashes(candidate.uuid),
+    )
+    .await
+    {
+        Ok(Ok(crashes)) => crashes.crashes,
+        Ok(Err(err)) => {
+            tracing::warn!(server = %candidate.uuid, "failed to load crashes for crash check: {err:#?}");
+            return; // do not update state; retry next tick
+        }
+        Err(_) => {
+            tracing::warn!(server = %candidate.uuid, "timed out loading crashes for crash check");
+            return;
+        }
+    };
+    let Some(crash) = crashes.iter().max_by_key(|crash| crash.id) else {
+        let _ = ServerAlertState::record_observation(
+            &state.database, candidate.uuid, current_state, None, false,
+        )
+        .await;
+        return; // clean stop: no crash record, no alert
+    };
+    let crash_is_new = previous.last_crash_id.is_none_or(|id| id != crash.id)
+        && crash.timestamp.naive_utc() > previous.last_seen_at;
+    if !crash_is_new {
+        let _ = ServerAlertState::record_observation(
+            &state.database, candidate.uuid, current_state, None, false,
+        )
+        .await;
+        return;
+    }
+
+    raise_alert(
+        state,
+        client,
+        candidate,
+        current_state,
+        ServerAlertKind::Crashed,
+        Some(crash.clone()),
+    )
+    .await;
+}
+
+/// Creates the alert row, records the state (exactly-once), logs
+/// `server:alert.sent`, and dispatches to the server's + global webhooks.
+async fn raise_alert(
+    state: &shared::State,
+    client: &wings_api::client::WingsClient,
+    candidate: &Candidate,
+    observed_state: &'static str,
+    kind: ServerAlertKind,
+    crash: Option<wings_api::Crash>,
+) {
+    let last_console = if kind == ServerAlertKind::Crashed {
+        fetch_console_tail(client, candidate.uuid).await
+    } else {
+        None
+    };
+
+    let server = match shared::models::server::Server::by_uuid_optional_cached(
+        &state.database,
+        candidate.uuid,
+    )
+    .await
+    {
+        Ok(Some(server)) => server,
+        _ => return,
+    };
+
+    let alert = ServerAlert::create(
+        state,
+        CreateServerAlertOptions {
+            server_uuid: candidate.uuid,
+            kind,
+            crash_id: crash.as_ref().map(|crash| crash.id),
+            exit_code: crash.as_ref().map(|crash| crash.exit_code),
+            oom_killed: crash.as_ref().is_some_and(|crash| crash.oom_killed),
+            last_console: last_console.map(|console| console.into()),
+            detected_at: crash.as_ref().map(|crash| crash.timestamp.to_utc()),
+        },
+    )
+    .await;
+    let alert = match alert {
+        Ok(alert) => alert,
+        Err(err) if err.is_unique_violation() => return, // already alerted (race)
+        Err(err) => {
+            tracing::error!(server = %candidate.uuid, "failed to create crash alert: {err:#?}");
+            return;
+        }
+    };
+
+    let _ = ServerAlertState::record_observation(
+        &state.database,
+        candidate.uuid,
+        observed_state,
+        alert.crash_id,
+        true,
+    )
+    .await;
+
+    if let Err(err) = ServerActivity::create(
+        state,
+        CreateServerActivityOptions {
+            server_uuid: candidate.uuid,
+            user_uuid: None,
+            impersonator_uuid: None,
+            api_key_uuid: None,
+            schedule_uuid: None,
+            event: "server:alert.sent".into(),
+            ip: None,
+            data: serde_json::json!({
+                "uuid": alert.uuid,
+                "kind": alert.kind,
+                "crash": alert.crash_id,
+                "exit_code": alert.exit_code,
+                "oom_killed": alert.oom_killed,
+            }),
+            created: None,
+        },
+    )
+    .await
+    {
+        tracing::warn!(server = %candidate.uuid, "failed to log crash alert activity: {err:#?}");
+    }
+
+    match ServerWebhook::enabled_for_server(&state.database, candidate.uuid).await {
+        Ok(webhooks) => {
+            shared::webhooks::dispatch_server_alert(state, &server, &alert, &webhooks).await;
+        }
+        Err(err) => {
+            tracing::warn!(server = %candidate.uuid, "failed to load webhooks for crash alert: {err:#?}");
+        }
+    }
+}
+
+/// Last ~20 console lines from Wings, truncated for the alert row.
+async fn fetch_console_tail(
+    client: &wings_api::client::WingsClient,
+    server_uuid: uuid::Uuid,
+) -> Option<String> {
+    use tokio::io::AsyncReadExt;
+
+    let reader = tokio::time::timeout(
+        CRASH_WATCH_TIMEOUT,
+        client.get_servers_server_logs(
+            server_uuid,
+            &wings_api::servers_server_logs::get::Query {
+                lines: Some(20),
+                ..Default::default()
+            },
+        ),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    let mut buf = Vec::new();
+    let mut reader = reader.take(shared::webhooks::MAX_CONSOLE_CHARS as u64);
+    reader.read_to_end(&mut buf).await.ok()?;
+    let text = String::from_utf8_lossy(&buf).into_owned();
+    let text = text.trim().to_string();
+    if text.is_empty() { None } else { Some(text) }
 }

@@ -1,5 +1,6 @@
 import type { ServerRouteDefinition } from 'shared';
 import {
+  faBell,
   faBoxArchive,
   faBriefcase,
   faCog,
@@ -39,6 +40,7 @@ const ServerConsole = lazy(() => import('@/pages/server/console/ServerConsole.ts
 const PopoutConsole = lazy(() => import('@/pages/server/console/PopoutConsole.tsx'));
 const ServerResourceHistory = lazy(() => import('@/pages/server/console/history/ServerResourceHistory.tsx'));
 const ServerCrashes = lazy(() => import('@/pages/server/console/crashes/ServerCrashes.tsx'));
+const ServerAlerts = lazy(() => import('@/pages/server/alerts/ServerAlerts.tsx'));
 const ServerFilesEditor = lazy(() => import('@/pages/server/files/editor/FileEditor.tsx'));
 const FileRevisionDiff = lazy(() => import('@/pages/server/files/editor/FileRevisionDiff.tsx'));
 const DatabaseInstanceView = lazy(() => import('@/pages/server/databases/instances/DatabaseInstanceView.tsx'));
@@ -218,6 +220,13 @@ const routes: ServerRouteDefinition[] = [
     path: '/activity',
     element: ServerActivity,
     permission: 'activity.read',
+  },
+  {
+    name: () => getTranslations().t('pages.server.alerts.title', {}),
+    icon: faBell,
+    path: '/alerts',
+    element: ServerAlerts,
+    permission: 'webhooks.read',
   },
 ];
 

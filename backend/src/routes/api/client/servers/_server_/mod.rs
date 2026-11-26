@@ -17,6 +17,7 @@ use std::sync::Arc;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 mod activity;
+mod alerts;
 mod allocations;
 mod announcements;
 mod backups;
@@ -34,6 +35,7 @@ mod settings;
 mod startup;
 mod subusers;
 mod tunnel;
+mod webhooks;
 mod websocket;
 
 #[allow(clippy::too_many_arguments)]
@@ -134,6 +136,8 @@ pub fn router(state: &State) -> OpenApiRouter<State> {
     OpenApiRouter::new()
         .routes(routes!(get::route))
         .nest("/activity", activity::router(state))
+        .nest("/alerts", alerts::router(state))
+        .nest("/webhooks", webhooks::router(state))
         .nest("/announcements", announcements::router(state))
         .nest("/resources", resources::router(state))
         .nest("/logs", logs::router(state))
