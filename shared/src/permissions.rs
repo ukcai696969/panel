@@ -311,6 +311,17 @@ pub(crate) static BASE_ADMIN_PERMISSIONS: LazyLock<IndexMap<&'static str, Permis
                 },
             ),
             (
+                "billing",
+                PermissionGroup {
+                    description: "Permissions that control the ability to manage billing and user credits for the panel.",
+                    permissions: IndexMap::from([
+                        ("read", "Allows viewing billing pricing, user balances and transactions."),
+                        ("update", "Allows modifying billing pricing and settings."),
+                        ("adjust", "Allows granting and adjusting user credit balances."),
+                    ]),
+                },
+            ),
+            (
                 "assets",
                 PermissionGroup {
                     description: "Permissions that control the ability to manage assets for the panel.",

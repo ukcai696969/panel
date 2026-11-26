@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { desc, sql } from 'drizzle-orm';
 import {
   bigint,
   boolean,
@@ -496,6 +496,82 @@ export const userServerGroupsTable = pgTable(
     created: timestamp().defaultNow().notNull(),
   },
   (cols) => [index('server_groups_user_uuid_idx').on(cols.user_uuid)],
+);
+
+export const userCreditsTable = pgTable(
+  'user_credits',
+  {
+    uuid: uuid()
+      .default(sql`gen_random_uuid()`)
+      .primaryKey()
+      .notNull(),
+    user_uuid: uuid()
+      .references(() => usersTable.uuid, { onDelete: 'cascade' })
+      .notNull(),
+    balance_credits: bigint({ mode: 'number' }).default(0).notNull(),
+    created: timestamp().defaultNow().notNull(),
+    updated: timestamp().defaultNow().notNull(),
+  },
+  (cols) => [
+    index('user_credits_user_uuid_idx').on(cols.user_uuid),
+    uniqueIndex('user_credits_user_uuid_unique').on(cols.user_uuid),
+  ],
+);
+
+export const userCreditTransactionsTable = pgTable(
+  'user_credit_transactions',
+  {
+    uuid: uuid()
+      .default(sql`gen_random_uuid()`)
+      .primaryKey()
+      .notNull(),
+    user_uuid: uuid()
+      .references(() => usersTable.uuid, { onDelete: 'cascade' })
+      .notNull(),
+    kind: text().notNull(),
+    amount_credits: bigint({ mode: 'number' }).notNull(),
+    balance_after_credits: bigint({ mode: 'number' }).notNull(),
+    server_uuid: uuid().references(() => serversTable.uuid, { onDelete: 'set null' }),
+    reference: varchar({ length: 255 }),
+    description: varchar({ length: 512 }),
+    created: timestamp().defaultNow().notNull(),
+  },
+  (cols) => [
+    check(
+      'user_credit_transactions_kind_check',
+      sql`${cols.kind} IN ('purchase', 'charge', 'refund', 'adjustment')`,
+    ),
+    check('user_credit_transactions_amount_check', sql`${cols.amount_credits} <> 0`),
+    index('user_credit_transactions_user_uuid_created_idx').on(
+      cols.user_uuid,
+      desc(cols.created),
+      desc(cols.uuid),
+    ),
+    index('user_credit_transactions_reference_idx')
+      .on(cols.reference)
+      .where(sql`${cols.reference} IS NOT NULL`),
+  ],
+);
+
+export const serverBillingStatesTable = pgTable(
+  'server_billing_states',
+  {
+    uuid: uuid()
+      .default(sql`gen_random_uuid()`)
+      .primaryKey()
+      .notNull(),
+    server_uuid: uuid()
+      .references(() => serversTable.uuid, { onDelete: 'cascade' })
+      .notNull(),
+    last_charged_at: timestamp(),
+    total_charged_credits: bigint({ mode: 'number' }).default(0).notNull(),
+    created: timestamp().defaultNow().notNull(),
+    updated: timestamp().defaultNow().notNull(),
+  },
+  (cols) => [
+    index('server_billing_states_server_uuid_idx').on(cols.server_uuid),
+    uniqueIndex('server_billing_states_server_uuid_unique').on(cols.server_uuid),
+  ],
 );
 
 export const rolesTable = pgTable(

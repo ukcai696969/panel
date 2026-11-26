@@ -26,6 +26,7 @@ use utoipa::ToSchema;
 
 pub mod activity;
 pub mod app;
+pub mod billing;
 pub mod metadata;
 pub mod ratelimits;
 pub mod server;
@@ -408,6 +409,8 @@ pub struct AppSettings {
     pub ratelimits: ratelimits::AppSettingsRatelimits,
     #[schema(inline)]
     pub updates: updates::AppSettingsUpdates,
+    #[schema(inline)]
+    pub billing: billing::AppSettingsBilling,
 
     #[serde(skip)]
     pub disabled_extensions: Vec<compact_str::CompactString>,
@@ -438,6 +441,7 @@ impl AppSettings {
             activity: activity::AppSettingsActivity::mock(),
             ratelimits: ratelimits::AppSettingsRatelimits::mock(),
             updates: updates::AppSettingsUpdates::mock(),
+            billing: billing::AppSettingsBilling::mock(),
             disabled_extensions: Vec::new(),
             extension_permissions: BTreeMap::new(),
             extensions: HashMap::new(),
@@ -737,6 +741,8 @@ impl SettingsSerializeExt for AppSettings {
             .nest("ratelimits", &self.ratelimits)
             .await?
             .nest("updates", &self.updates)
+            .await?
+            .nest("billing", &self.billing)
             .await?;
 
         for (ext_identifier, ext_settings) in self.extensions.iter() {
@@ -1016,6 +1022,9 @@ impl SettingsDeserializeExt for AppSettingsDeserializer {
                 .await?,
             updates: deserializer
                 .nest("updates", &updates::AppSettingsUpdatesDeserializer)
+                .await?,
+            billing: deserializer
+                .nest("billing", &billing::AppSettingsBillingDeserializer)
                 .await?,
             disabled_extensions: deserializer
                 .take_raw_setting("disabled_extensions")

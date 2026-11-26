@@ -20,6 +20,7 @@ mod activity;
 mod announcements;
 mod assets;
 mod backup_configurations;
+mod billing;
 mod database_agent_hosts;
 mod database_agent_templates;
 mod database_hosts;
@@ -99,6 +100,7 @@ pub fn router(state: &State) -> OpenApiRouter<State> {
             "/backup-configurations",
             backup_configurations::router(state),
         )
+        .nest("/billing", billing::router(state))
         .nest(
             "/system-backup-policies",
             system_backup_policies::router(state),

@@ -1097,4 +1097,23 @@ pub async fn define_background_tasks(
             },
         )
         .await;
+    background_task_builder
+        .add_cron_task(
+            "charge_billing_hourly",
+            croner::Cron::from_str("0 0 * * * *").unwrap(),
+            async |state| {
+                let outcome = crate::billing::charge_running_servers(&state).await?;
+                if outcome.servers_charged > 0 {
+                    tracing::info!(
+                        servers_charged = outcome.servers_charged,
+                        servers_suspended = outcome.servers_suspended,
+                        credits_charged = outcome.credits_charged,
+                        "charged running servers for billing hour"
+                    );
+                }
+
+                Ok(())
+            },
+        )
+        .await;
 }

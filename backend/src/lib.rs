@@ -35,6 +35,7 @@ pub static EXTENSIONS: OnceLock<Arc<shared::extensions::manager::ExtensionManage
     OnceLock::new();
 pub static CLAP_COMMAND: OnceLock<clap::Command> = OnceLock::new();
 
+pub mod billing;
 pub mod commands;
 pub mod routes;
 pub mod tasks;

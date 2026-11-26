@@ -60,6 +60,8 @@ minijinja = { workspace = true }
 serde-saphyr = { workspace = true }
 hyper = "1.8.1"
 hex = { workspace = true }
+sha2 = { workspace = true }
+constant_time_eq = "0.6.0"
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
 aes = "0.9.0"
 cbc = "0.2.1"

@@ -21,6 +21,7 @@ use tower_cookies::Cookies;
 use utoipa_axum::router::OpenApiRouter;
 
 mod account;
+mod billing;
 mod permissions;
 pub mod servers;
 mod teams;
@@ -433,6 +434,7 @@ pub fn router(state: &State) -> OpenApiRouter<State> {
         .nest("/account", account::router(state))
         .nest("/servers", servers::router(state))
         .nest("/teams", teams::router(state))
+        .nest("/billing", billing::router(state))
         .nest("/permissions", permissions::router(state))
         .route_layer(axum::middleware::from_fn_with_state(state.clone(), auth))
         .with_state(state.clone())

@@ -3,6 +3,7 @@ import {
   faBriefcase,
   faClipboard,
   faCloud,
+  faCreditCard,
   faFingerprint,
   faKey,
   faKeyboard,
@@ -16,6 +17,7 @@ import DashboardActivity from '@/pages/dashboard/activity/DashboardActivity.tsx'
 import DashboardApiKeys from '@/pages/dashboard/api-keys/DashboardApiKeys.tsx';
 import DashboardApiKeysCreate from '@/pages/dashboard/api-keys/DashboardApiKeysCreate.tsx';
 import DashboardApiKeysUpdate from '@/pages/dashboard/api-keys/DashboardApiKeysUpdate.tsx';
+import DashboardBilling from '@/pages/dashboard/billing/DashboardBilling.tsx';
 import DashboardCommandSnippets from '@/pages/dashboard/command-snippets/DashboardCommandSnippets.tsx';
 import DashboardOAuthLinks from '@/pages/dashboard/oauth-links/DashboardOAuthLinks.tsx';
 import DashboardSecurityKeys from '@/pages/dashboard/security-keys/DashboardSecurityKeys.tsx';
@@ -33,6 +35,12 @@ const routes: RouteDefinition[] = [
     path: '/',
     element: DashboardAccount,
     exact: true,
+  },
+  {
+    name: () => getTranslations().t('pages.account.billing.title', {}),
+    icon: faCreditCard,
+    path: '/billing',
+    element: DashboardBilling,
   },
   {
     name: () => getTranslations().t('pages.account.securityKeys.title', {}),

@@ -5,6 +5,7 @@ import {
   faBullhorn,
   faClockRotateLeft,
   faCogs,
+  faCreditCard,
   faCrow,
   faCubes,
   faDatabase,
@@ -29,6 +30,7 @@ import AdminActivity from '@/pages/admin/activity/AdminActivity.tsx';
 import AdminAnnouncements from '@/pages/admin/announcements/AdminAnnouncements.tsx';
 import AdminAssets from '@/pages/admin/assets/AdminAssets.tsx';
 import AdminBackupConfigurations from '@/pages/admin/backup-configurations/AdminBackupConfigurations.tsx';
+import AdminBilling from '@/pages/admin/billing/AdminBilling.tsx';
 import AdminDatabaseAgentHosts from '@/pages/admin/database-agent-hosts/AdminDatabaseAgentHosts.tsx';
 import AdminDatabaseAgentTemplates from '@/pages/admin/database-agent-templates/AdminDatabaseAgentTemplates.tsx';
 import AdminDatabaseHosts from '@/pages/admin/database-hosts/AdminDatabaseHosts.tsx';
@@ -242,6 +244,14 @@ const routes: AdminRouteDefinition[] = [
     path: '/announcements/*',
     element: AdminAnnouncements,
     permission: ['announcements.*'],
+    category: 'system',
+  },
+  {
+    name: () => getTranslations().t('pages.admin.billing.title', {}),
+    icon: faCreditCard,
+    path: '/billing/*',
+    element: AdminBilling,
+    permission: ['billing.*'],
     category: 'system',
   },
   {

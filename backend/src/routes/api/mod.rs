@@ -6,6 +6,7 @@ use utoipa_axum::router::OpenApiRouter;
 pub mod admin;
 mod announcements;
 pub mod auth;
+mod billing_webhook;
 pub mod client;
 mod icons;
 mod languages;
@@ -47,5 +48,9 @@ pub fn router(state: &State) -> OpenApiRouter<State> {
         .nest("/client", client::router(state))
         .nest("/admin", admin::router(state))
         .nest("/remote", remote::router(state))
+        // Stripe webhook: public, no session/API-key auth. The handler
+        // itself verifies the Stripe signature and rejects everything
+        // when STRIPE_WEBHOOK_SECRET is not set.
+        .nest("/billing-webhook", billing_webhook::router(state))
         .with_state(state.clone())
 }
