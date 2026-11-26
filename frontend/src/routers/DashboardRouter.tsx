@@ -3,6 +3,7 @@ import { Suspense, useMemo } from 'react';
 import { NavLink, Route, Routes } from 'react-router';
 import AppIcon from '@/elements/AppIcon.tsx';
 import AccountContentContainer from '@/elements/containers/AccountContentContainer.tsx';
+import CommandPaletteTrigger from '@/elements/CommandPaletteTrigger.tsx';
 import ExtensionSlot from '@/elements/ExtensionSlot.tsx';
 import ScreenBlock from '@/elements/feedback/ScreenBlock.tsx';
 import Spinner from '@/elements/feedback/Spinner.tsx';
@@ -86,6 +87,7 @@ export default function DashboardRouter({ isNormal }: { isNormal: boolean }) {
               {!user?.suspended && (
                 <>
                   <QuickActionsTrigger />
+                  <CommandPaletteTrigger />
                   <div className='mt-2' />
                   <Sidebar.Link
                     to='/'

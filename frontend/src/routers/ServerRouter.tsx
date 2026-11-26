@@ -9,6 +9,7 @@ import getServer from '@/api/server/getServer.ts';
 import AppIcon from '@/elements/AppIcon.tsx';
 import { ServerCan } from '@/elements/Can.tsx';
 import ServerContentContainer from '@/elements/containers/ServerContentContainer.tsx';
+import CommandPaletteTrigger from '@/elements/CommandPaletteTrigger.tsx';
 import ExtensionSlot from '@/elements/ExtensionSlot.tsx';
 import ScreenBlock from '@/elements/feedback/ScreenBlock.tsx';
 import Spinner from '@/elements/feedback/Spinner.tsx';
@@ -193,6 +194,7 @@ export default function ServerRouter({ isNormal }: { isNormal: boolean }) {
               {!user?.suspended && (
                 <>
                   <QuickActionsTrigger />
+                  <CommandPaletteTrigger />
                   <div className='mt-2' />
                   <ServerStatusIndicator />
                 </>

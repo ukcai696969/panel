@@ -8,6 +8,7 @@ import ContentContainer from './elements/containers/ContentContainer.tsx';
 import ExtensionSlot from './elements/ExtensionSlot.tsx';
 import UploadConflictHost from './elements/files/UploadConflictHost.tsx';
 import UploadsCard from './elements/files/UploadsCard.tsx';
+import CommandPalette from './elements/CommandPalette.tsx';
 import QuickActionsPalette from './elements/quickActions/QuickActionsPalette.tsx';
 import { isAdmin } from './lib/auth/permissions.ts';
 import { AuthProvider, useAuth } from './providers/AuthProvider.tsx';
@@ -127,6 +128,7 @@ export default function RouterRoutes({ isNormal }: { isNormal: boolean }) {
               {isNormal && <UploadsCard />}
               {isNormal && <UploadConflictHost />}
               {isNormal && <QuickActionsPalette />}
+              {isNormal && <CommandPalette />}
 
               <ExtensionSlot
                 components={window.extensionContext.extensionRegistry.pages.global.appendedComponents}

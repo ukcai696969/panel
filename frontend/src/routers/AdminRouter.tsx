@@ -4,6 +4,7 @@ import { Fragment, Suspense, useEffect, useMemo } from 'react';
 import { NavLink, Route, Routes } from 'react-router';
 import AppIcon from '@/elements/AppIcon.tsx';
 import AdminContentContainer from '@/elements/containers/AdminContentContainer.tsx';
+import CommandPaletteTrigger from '@/elements/CommandPaletteTrigger.tsx';
 import ExtensionSlot from '@/elements/ExtensionSlot.tsx';
 import ScreenBlock from '@/elements/feedback/ScreenBlock.tsx';
 import Spinner from '@/elements/feedback/Spinner.tsx';
@@ -85,6 +86,7 @@ export default function AdminRouter({ isNormal }: { isNormal: boolean }) {
               {!user?.suspended && (
                 <>
                   <QuickActionsTrigger />
+                  <CommandPaletteTrigger />
                   <div className='mt-2' />
                   <Sidebar.Link to='/' end icon={faReply} name={t('common.button.back', {})} />
                   <Sidebar.Divider />
