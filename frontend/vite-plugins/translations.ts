@@ -132,6 +132,10 @@ export function translationsPlugin(): Plugin {
 
       if (languages.length === 0) return;
 
+      // Vite empties dist/ at the start of the build, so dist/translations
+      // does not exist when closeBundle runs — create it before writing.
+      fs.mkdirSync(outDir, { recursive: true });
+
       let totalSource = 0;
       let totalMinified = 0;
 

@@ -7,7 +7,7 @@ import TextInput from '@/elements/input/TextInput.tsx';
 import Stack from '@/elements/layout/Stack.tsx';
 import TitleCard from '@/elements/data-display/TitleCard.tsx';
 import Text from '@/elements/typography/Text.tsx';
-import { useServer } from '@/stores/server.ts';
+import { useServerStore } from '@/stores/server.ts';
 import { useToast } from '@/providers/ToastProvider.tsx';
 import { useTranslations } from '@/providers/TranslationProvider.tsx';
 
@@ -15,7 +15,7 @@ import { useTranslations } from '@/providers/TranslationProvider.tsx';
 export default function SaveAsTemplateContainer() {
   const { t } = useTranslations();
   const { addToast } = useToast();
-  const server = useServer((state) => state.server);
+  const server = useServerStore((state) => state.server);
 
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState(server.name);
