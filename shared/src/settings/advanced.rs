@@ -88,6 +88,7 @@ use super::{
     SettingsSerializer,
 };
 use crate::crypt::PasswordAlgorithm;
+use crate::prelude::StringExt;
 use compact_str::ToCompactString;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;

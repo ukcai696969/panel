@@ -11,7 +11,7 @@ use std::{
 };
 use utoipa::ToSchema;
 
-#[derive(ToSchema, Validate, Serialize, Deserialize)]
+#[derive(ToSchema, Validate, Serialize, Deserialize, Clone)]
 pub struct ExportedServerScheduleStep {
     #[garde(dive)]
     pub action: wings_api::ScheduleActionInner,

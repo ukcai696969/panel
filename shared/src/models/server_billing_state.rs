@@ -6,9 +6,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Row, postgres::PgRow};
 use std::{
     collections::BTreeMap,
-    sync::{Arc, LazyLock},
+    sync::LazyLock,
 };
-use utoipa::ToSchema;
 
 /// Per-server billing bookkeeping. This is NOT the server itself — it
 /// only records when a server was last charged, so the hourly task is

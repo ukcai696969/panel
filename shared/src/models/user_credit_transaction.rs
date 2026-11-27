@@ -148,7 +148,7 @@ impl BaseModel for UserCreditTransaction {
         Ok(Self {
             uuid: row.try_get(compact_str::format_compact!("{prefix}uuid").as_str())?,
             user_uuid: row.try_get(compact_str::format_compact!("{prefix}user_uuid").as_str())?,
-            kind: kind_raw.parse().map_err(anyhow::Error::new)?,
+            kind: kind_raw.parse()?,
             amount_credits: row
                 .try_get(compact_str::format_compact!("{prefix}amount_credits").as_str())?,
             balance_after_credits: row.try_get(

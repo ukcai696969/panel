@@ -1,6 +1,6 @@
 use crate::{
     models::{
-        InsertQueryBuilder, UpdateQueryBuilder,
+        UpdateQueryBuilder,
         user_credit_transaction::{
             CreateUserCreditTransactionOptions, UserCreditTransaction,
             UserCreditTransactionKind,
@@ -12,9 +12,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Row, postgres::PgRow};
 use std::{
     collections::BTreeMap,
-    sync::{Arc, LazyLock},
+    sync::LazyLock,
 };
-use utoipa::ToSchema;
 
 /// One user's credit balance. 1 credit = 1 minor currency unit (1 cent
 /// for USD/GBP/EUR) — see `shared::settings::billing`.
@@ -125,7 +124,7 @@ impl UserCredit {
     /// is `ON CONFLICT DO NOTHING` + re-read, so two concurrent first
     /// uses cannot create two rows.
     pub async fn get_or_create_with_transaction(
-        state: &crate::State,
+        _state: &crate::State,
         user_uuid: uuid::Uuid,
         transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     ) -> Result<Self, crate::database::DatabaseError> {

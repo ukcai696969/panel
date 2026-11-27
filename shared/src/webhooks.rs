@@ -14,6 +14,7 @@ use crate::{
         server_webhook::{ServerWebhook, ServerWebhookEvent, ServerWebhookKind},
     },
 };
+use futures_util::StreamExt;
 use sha2::Digest;
 
 /// How long a single delivery attempt may take.

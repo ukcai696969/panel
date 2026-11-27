@@ -144,6 +144,10 @@ impl ServerTemplateSnapshot {
                 databases: server.database_limit,
                 backups: server.backup_limit,
                 schedules: server.schedule_limit,
+                // The extendible `__overlay` carries extension data; a
+                // template snapshot only stores the four numeric limits, so
+                // it is empty here (no extension hooks run for this value).
+                __overlay: Default::default(),
             },
             startup: server.startup.clone(),
             image: server.image.clone(),

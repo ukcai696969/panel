@@ -447,7 +447,7 @@ pub struct CreateServerWebhookOptions {
 /// The plaintext HMAC secret is generated server-side at creation and
 /// returned once alongside the row; it is never readable again.
 pub fn generate_webhook_secret() -> String {
-    use rand::{Rng, distr::Alphanumeric};
+    use rand::{RngExt, distr::Alphanumeric};
 
     rand::rng()
         .sample_iter(&Alphanumeric)

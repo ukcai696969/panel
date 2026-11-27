@@ -34,7 +34,7 @@ use crate::{
     response::DisplayError,
 };
 use garde::Validate;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::HashMap;
 use utoipa::ToSchema;
 
@@ -325,6 +325,10 @@ impl Server {
                     databases: source.database_limit,
                     backups: source.backup_limit,
                     schedules: source.schedule_limit,
+                    // The extendible `__overlay` carries extension data; a
+                    // clone only copies the four numeric limits, so it is
+                    // empty here (no extension hooks run for this value).
+                    __overlay: Default::default(),
                 },
                 variables,
             },
@@ -482,7 +486,9 @@ impl Server {
         };
 
         let mut transaction = state.database.write().begin().await?;
-        if let Err(err) = backup
+        // `restore` takes `self` by value; clone so `backup` is still
+        // available below for the cleanup delete + warning.
+        if let Err(err) = backup.clone()
             .restore(
                 state,
                 &mut transaction,

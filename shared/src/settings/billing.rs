@@ -88,9 +88,11 @@ impl AppSettingsBilling {
 
         // Round each resource up to the next whole unit: a server never
         // pays 0 for a resource it actually holds.
-        let ram_gb = memory_mib.div_ceil(1024).max(0);
-        let cpu_units = (i64::from(cpu)).div_ceil(100).max(0);
-        let disk_gb = disk_mib.div_ceil(1024).max(0);
+        // `i64::div_ceil` is still unstable; do the ceiling division
+        // by hand (inputs are resource sizes, far from i64::MAX).
+        let ram_gb = ((memory_mib + 1023) / 1024).max(0);
+        let cpu_units = ((i64::from(cpu) + 99) / 100).max(0);
+        let disk_gb = ((disk_mib + 1023) / 1024).max(0);
 
         ram_gb
             .saturating_mul(self.price_per_gb_ram_per_hour_credits)

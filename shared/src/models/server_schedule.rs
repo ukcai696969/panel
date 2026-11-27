@@ -11,7 +11,7 @@ use std::{
 };
 use utoipa::ToSchema;
 
-#[derive(ToSchema, Validate, Serialize, Deserialize)]
+#[derive(ToSchema, Validate, Serialize, Deserialize, Clone)]
 pub struct ExportedServerSchedule {
     #[garde(length(chars, min = 1, max = 255))]
     #[schema(min_length = 1, max_length = 255)]
