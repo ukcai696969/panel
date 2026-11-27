@@ -13,7 +13,7 @@
 //! shaders and resource packs are not mapped, so those types are
 //! Modrinth-only for now.
 
-use super::types::{AddonFile, AddonProject, AddonSource, AddonVersion, ServerAddonContext, version_is_compatible};
+use super::types::{AddonFile, AddonProject, AddonSource, AddonVersion, SearchResult, ServerAddonContext, version_is_compatible};
 use serde::Deserialize;
 
 const CURSEFORGE_API: &str = "https://api.curseforge.com/v1";
@@ -132,11 +132,6 @@ struct CfSearchResponse {
 struct CfPagination {
     #[serde(default)]
     total_count: u64,
-}
-
-pub struct SearchResult {
-    pub projects: Vec<AddonProject>,
-    pub total: u64,
 }
 
 pub async fn search_projects(

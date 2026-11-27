@@ -87,6 +87,11 @@ mod post {
                 .ok();
             }
             Err(err) => {
+                // clone_server fails with a DatabaseError, but
+                // extract_readable_message takes an anyhow::Error; wrapping
+                // it keeps the Validation / InvalidRelation handling in
+                // extract_readable_error working via downcast.
+                let err = anyhow::Error::new(err);
                 let (message, status) =
                     shared::response::extract_readable_message(&err).unwrap_or_else(|| {
                         (

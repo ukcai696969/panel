@@ -141,7 +141,7 @@ mod post {
                 // mismatch here must not reject the install.
                 modrinth::project_version(&state, &data.version_id, &context)
                     .await
-                    .map_err(|err| (err, StatusCode::BAD_GATEWAY))?
+                    .map_err(|err| ApiResponse::error(err).with_status(StatusCode::BAD_GATEWAY))?
             }
             AddonSource::Curseforge => curseforge::project_version(
                 &state,
@@ -151,11 +151,12 @@ mod post {
             )
             .await
             .map_err(|err| {
-                if err.contains("not configured") {
-                    (err, StatusCode::SERVICE_UNAVAILABLE)
+                let status = if err.contains("not configured") {
+                    StatusCode::SERVICE_UNAVAILABLE
                 } else {
-                    (err, StatusCode::BAD_GATEWAY)
-                }
+                    StatusCode::BAD_GATEWAY
+                };
+                ApiResponse::error(err).with_status(status)
             })?,
         };
 

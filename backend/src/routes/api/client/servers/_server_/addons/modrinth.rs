@@ -5,7 +5,7 @@
 //! All requests go through `shared::net::outbound_request`, so resolved
 //! addresses covered by `APP_BLOCKED_CIDRS` are refused (SSRF protection).
 
-use super::types::{AddonFile, AddonProject, AddonSource, AddonVersion, ServerAddonContext, version_is_compatible};
+use super::types::{AddonFile, AddonProject, AddonSource, AddonVersion, SearchResult, ServerAddonContext, version_is_compatible};
 use serde::Deserialize;
 
 const MODRINTH_API: &str = "https://api.modrinth.com/v2";
@@ -68,11 +68,6 @@ struct SearchResponse {
 const KNOWN_LOADERS: &[&str] = &[
     "fabric", "forge", "neoforge", "quilt", "paper", "purpur", "spigot", "bukkit", "vanilla",
 ];
-
-pub struct SearchResult {
-    pub projects: Vec<AddonProject>,
-    pub total: u64,
-}
 
 /// Search Modrinth. `project_type` is e.g. `mod`, `modpack`, `plugin`,
 /// `datapack`, `shader`, `resourcepack` (empty = all). When the server

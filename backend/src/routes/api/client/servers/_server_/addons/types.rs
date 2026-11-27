@@ -74,6 +74,14 @@ pub struct AddonVersion {
     pub compatible: bool,
 }
 
+/// Search results from either catalogue. Modrinth and CurseForge return
+/// the same shape, so search handlers can treat them uniformly.
+#[derive(Debug, Clone)]
+pub struct SearchResult {
+    pub projects: Vec<AddonProject>,
+    pub total: u64,
+}
+
 /// What the panel knows about the server's game, derived from its egg and
 /// startup variables. Minecraft eggs in the wild name these variables
 /// differently (`MINECRAFT_VERSION`, `MC_VERSION`, `GAME_VERSION`, ...), so
