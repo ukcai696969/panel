@@ -198,7 +198,7 @@ pub async fn search_projects(
     })
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 struct CfFile {
     #[serde(default)]
     id: u32,

@@ -136,7 +136,7 @@ mod patch {
     pub async fn route(
         state: GetState,
         permissions: GetPermissionManager,
-        server: GetServer,
+        _server: GetServer,
         activity_logger: GetServerActivityLogger,
         mut webhook: GetServerWebhook,
         shared::Payload(mut data): shared::Payload<UpdateServerWebhookOptions>,
@@ -216,7 +216,7 @@ mod delete {
     pub async fn route(
         state: GetState,
         permissions: GetPermissionManager,
-        server: GetServer,
+        _server: GetServer,
         activity_logger: GetServerActivityLogger,
         webhook: GetServerWebhook,
     ) -> ApiResponseResult {

@@ -342,7 +342,7 @@ pub struct ApiServerAlert {
 
 /// Admin list row: the alert plus the server it belongs to, so the
 /// Notifications log is readable without a second lookup per row.
-#[derive(Serialize)]
+#[derive(ToSchema, Serialize)]
 pub struct AdminServerAlert {
     #[serde(flatten)]
     pub alert: ApiServerAlert,
