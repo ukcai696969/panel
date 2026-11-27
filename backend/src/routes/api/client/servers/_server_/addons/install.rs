@@ -8,7 +8,8 @@ mod post {
     use shared::{
         ApiError, GetState,
         models::{
-            server::{GetServer, GetServerActivityLogger, server_variable::ServerVariable},
+            server::{GetServer, GetServerActivityLogger},
+            server_variable::ServerVariable,
             user::GetPermissionManager,
         },
         response::{ApiResponse, ApiResponseResult},

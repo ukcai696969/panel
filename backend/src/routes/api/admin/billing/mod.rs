@@ -242,7 +242,6 @@ mod get_stripe {
         models::user::GetPermissionManager,
         response::{ApiResponse, ApiResponseResult},
     };
-    use utoipa::ToSchema;
 
     #[utoipa::path(get, path = "/stripe", responses(
         (status = OK, body = super::StripeSettingsResponse),

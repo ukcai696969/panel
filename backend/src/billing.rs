@@ -24,6 +24,7 @@ use chrono::Timelike;
 use sha2::{Digest, Sha256};
 use shared::settings::billing::AppSettingsBilling;
 use shared::models::{
+    CreatableModel,
     server::Server,
     server_activity::{CreateServerActivityOptions, ServerActivity},
     server_billing_state::ServerBillingState,

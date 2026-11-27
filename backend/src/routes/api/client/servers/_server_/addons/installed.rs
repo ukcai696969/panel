@@ -3,7 +3,7 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 
 mod get {
     use axum::{extract::Query, http::StatusCode};
-    use serde::{Deserialize, Serialize};
+    use serde::Serialize;
     use shared::{
         ApiError, GetState,
         models::{
@@ -11,7 +11,6 @@ mod get {
             server_activity::ServerActivity,
             user::{GetPermissionManager, GetUser},
         },
-        prelude::AsyncIteratorExt,
         response::{ApiResponse, ApiResponseResult},
         settings::activity::ActivityIpHiding,
     };

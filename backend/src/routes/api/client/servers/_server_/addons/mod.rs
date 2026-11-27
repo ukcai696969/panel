@@ -9,7 +9,6 @@ mod search;
 mod types;
 mod versions;
 
-pub use types::{AddonFile, AddonProject, AddonSource, AddonVersion, ServerAddonContext};
 
 pub fn router(state: &State) -> OpenApiRouter<State> {
     OpenApiRouter::new()
