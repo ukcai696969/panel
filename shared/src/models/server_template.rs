@@ -124,7 +124,7 @@ impl ServerTemplateSnapshot {
 
         Ok(Self {
             egg_uuid: server.egg.uuid,
-            backup_configuration_uuid: server.backup_configuration.map(|fetchable| fetchable.uuid),
+            backup_configuration_uuid: server.backup_configuration.as_ref().map(|fetchable| fetchable.uuid),
             variables,
             limits: AdminApiServerLimits {
                 cpu: server.cpu,

@@ -290,7 +290,7 @@ impl Server {
                 node_uuid,
                 owner_uuid,
                 egg_uuid: source.egg.uuid,
-                backup_configuration_uuid: source.backup_configuration.map(|fetchable| fetchable.uuid),
+                backup_configuration_uuid: source.backup_configuration.as_ref().map(|fetchable| fetchable.uuid),
                 allocation_uuid,
                 allocation_uuids,
                 start_on_completion: options.start_on_completion,
