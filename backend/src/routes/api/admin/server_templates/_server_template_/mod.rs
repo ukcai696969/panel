@@ -55,7 +55,7 @@ mod get {
     use shared::{
         ApiError, GetState,
         models::{
-            IntoAdminApiObject, server_template::ServerTemplate, user::GetPermissionManager,
+            IntoAdminApiObject, user::GetPermissionManager,
         },
         response::{ApiResponse, ApiResponseResult},
     };
@@ -99,7 +99,7 @@ mod delete {
         ApiError, GetState,
         models::{
             DeletableModel, admin_activity::GetAdminActivityLogger,
-            server_template::ServerTemplate, user::GetPermissionManager,
+            user::GetPermissionManager,
         },
         response::{ApiResponse, ApiResponseResult},
     };
@@ -149,7 +149,7 @@ mod patch {
         ApiError, GetState,
         models::{
             UpdatableModel, admin_activity::GetAdminActivityLogger,
-            server_template::{ServerTemplate, UpdateServerTemplateOptions},
+            server_template::UpdateServerTemplateOptions,
             user::GetPermissionManager,
         },
         response::{ApiResponse, ApiResponseResult},

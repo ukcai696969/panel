@@ -63,7 +63,7 @@ mod get {
     use serde::Serialize;
     use shared::{
         ApiError, GetState,
-        models::{IntoApiObject, server_template::ServerTemplate},
+        models::IntoApiObject,
         response::{ApiResponse, ApiResponseResult},
     };
     use utoipa::ToSchema;
@@ -100,7 +100,6 @@ mod delete {
         ApiError, GetState,
         models::{
             DeletableModel,
-            server_template::ServerTemplate,
             user::{GetPermissionManager, GetUser},
         },
         response::{ApiResponse, ApiResponseResult},
