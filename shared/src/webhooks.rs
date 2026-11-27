@@ -378,26 +378,32 @@ pub async fn dispatch_server_alert(
     let deliveries = webhooks
         .iter()
         .filter(|webhook| webhook.enabled && webhook.events.contains(&event))
-        .map(|webhook| async move {
-            let outcome = dispatch_webhook(state, webhook, &payload).await;
+        .map(|webhook| {
+            // `payload` is moved into each delivery's async block; clone it
+            // per webhook — the map closure runs many times (FnMut), so the
+            // original cannot be moved.
+            let payload = payload.clone();
+            async move {
+                let outcome = dispatch_webhook(state, webhook, &payload).await;
 
-            if let Err(err) =
-                ServerWebhook::record_delivery(&state.database, webhook.uuid, outcome.successful)
-                    .await
-            {
-                tracing::warn!(
-                    webhook = %webhook.uuid,
-                    "failed to record webhook delivery: {err:#?}"
-                );
-            }
-            if !outcome.successful {
-                tracing::warn!(
-                    webhook = %webhook.uuid,
-                    server = %server.uuid,
-                    event = payload.event,
-                    error = outcome.error.as_deref().unwrap_or("unknown error"),
-                    "webhook delivery failed for server alert"
-                );
+                if let Err(err) =
+                    ServerWebhook::record_delivery(&state.database, webhook.uuid, outcome.successful)
+                        .await
+                {
+                    tracing::warn!(
+                        webhook = %webhook.uuid,
+                        "failed to record webhook delivery: {err:#?}"
+                    );
+                }
+                if !outcome.successful {
+                    tracing::warn!(
+                        webhook = %webhook.uuid,
+                        server = %server.uuid,
+                        event = payload.event,
+                        error = outcome.error.as_deref().unwrap_or("unknown error"),
+                        "webhook delivery failed for server alert"
+                    );
+                }
             }
         });
 

@@ -391,7 +391,7 @@ impl SettingsDeserializeExt for AppSettingsAdvancedDeserializer {
             .read_serde_setting("blocked_cidrs")
             .ok()
             .flatten()
-            .filter(|cidrs| {
+            .filter(|cidrs: &Vec<compact_str::CompactString>| {
                 cidrs
                     .iter()
                     .all(|cidr| cidr.parse::<cidr::IpCidr>().is_ok())
@@ -400,7 +400,7 @@ impl SettingsDeserializeExt for AppSettingsAdvancedDeserializer {
             .read_serde_setting("trusted_proxies")
             .ok()
             .flatten()
-            .filter(|proxies| {
+            .filter(|proxies: &Vec<compact_str::CompactString>| {
                 proxies
                     .iter()
                     .all(|proxy| proxy.parse::<cidr::IpCidr>().is_ok())

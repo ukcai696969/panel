@@ -328,7 +328,11 @@ impl Server {
                     // The extendible `__overlay` carries extension data; a
                     // clone only copies the four numeric limits, so it is
                     // empty here (no extension hooks run for this value).
-                    __overlay: Default::default(),
+                    // `ExtensionOverlay::new()` (not `Default::default()`):
+                    // `Default` for the overlay is conditional on the
+                    // extendible type itself implementing `Default`, which
+                    // `ApiServerFeatureLimits` does not.
+                    __overlay: schema_extension_core::ExtensionOverlay::new(),
                 },
                 variables,
             },
