@@ -1,36 +1,41 @@
 use futures_util::StreamExt;
 use rand::RngExt;
-use shared::models::{
-    ByUuid, CreatableModel,
-    admin_activity::AdminActivity,
-    announcement::Announcement,
-    backup_configuration::BackupConfiguration,
-    egg_repository::EggRepository,
-    node::Node,
-    oauth_provider_mapping::OAuthProviderMapping,
-    server_activity::{CreateServerActivityOptions, ServerActivity},
-    server_alert::{CreateServerAlertOptions, ServerAlert, ServerAlertKind, ServerAlertState},
-    server_backup::{BackupDisk, CreateServerBackupOptions, ServerBackup, ServerBackupKind},
-    server_database_instance::ServerDatabaseInstance,
-    server_webhook::ServerWebhook,
-    system_backup_policy::SystemBackupPolicy,
-    system_backup_policy_run::SystemBackupPolicyRun,
-    system_backup_policy_run_target::{
-        SystemBackupPolicyRunTarget, SystemBackupPolicyRunTargetClaim,
-        SystemBackupPolicyRunTargetReason, SystemBackupPolicyRunTargetStatus,
+use shared::{
+    models::{
+        ByUuid, CreatableModel, DeletableModel,
+        admin_activity::{AdminActivity, CreateAdminActivityOptions},
+        announcement::{Announcement, AnnouncementType, CreateAnnouncementOptions},
+        backup_configuration::BackupConfiguration,
+        egg_repository::EggRepository,
+        node::Node,
+        oauth_provider_mapping::OAuthProviderMapping,
+        server_activity::{CreateServerActivityOptions, ServerActivity},
+        server_alert::{CreateServerAlertOptions, ServerAlert, ServerAlertKind, ServerAlertState},
+        server_backup::{BackupDisk, CreateServerBackupOptions, ServerBackup, ServerBackupKind},
+        server_database_instance::ServerDatabaseInstance,
+        server_webhook::ServerWebhook,
+        system_backup_policy::SystemBackupPolicy,
+        system_backup_policy_run::SystemBackupPolicyRun,
+        system_backup_policy_run_target::{
+            SystemBackupPolicyRunTarget, SystemBackupPolicyRunTargetClaim,
+            SystemBackupPolicyRunTargetReason, SystemBackupPolicyRunTargetStatus,
+        },
+        team_activity::TeamActivity,
+        user_activity::UserActivity,
+        user_api_key::UserApiKey,
+        user_email_verification::UserEmailVerification,
+        user_password_reset::UserPasswordReset,
+        user_security_key::UserSecurityKey,
+        user_server_group::UserServerGroup,
+        user_session::UserSession,
+        user_two_factor_code::UserTwoFactorCode,
     },
-    team_activity::TeamActivity,
-    user_activity::UserActivity,
-    user_api_key::UserApiKey,
-    user_email_verification::UserEmailVerification,
-    user_password_reset::UserPasswordReset,
-    user_security_key::UserSecurityKey,
-    user_server_group::UserServerGroup,
-    user_session::UserSession,
-    user_two_factor_code::UserTwoFactorCode,
+    node_recommendation::{
+        ALERT_COOLDOWN_SECONDS, CLEAR_THRESHOLD, ResourceKind, WARN_THRESHOLD, alert_cache_key,
+        format_mb,
+    },
 };
-use std::collections::HashMap;
-use std::str::FromStr;
+use std::{collections::{BTreeMap, HashMap}, str::FromStr};
 
 async fn database_instance_running(
     state: &shared::State,
@@ -355,6 +360,262 @@ async fn record_system_backup_target_outcome(
     }
 }
 
+/// Raise a resource alert for one node + resource: a warning announcement
+/// scoped to the node (shown to users on that node) and an admin activity
+/// entry. The announcement uuid is stored in the cache under
+/// [`alert_cache_key`] for [`ALERT_COOLDOWN_SECONDS`], which both
+/// de-duplicates the alert and lets the recovery pass dismiss it again.
+async fn raise_node_resource_alert(
+    state: &shared::State,
+    usage: &shared::node_recommendation::NodeUsage,
+    resource: ResourceKind,
+    used_ratio: f64,
+) {
+    let percent = (used_ratio * 100.0).round() as i64;
+    let (used_mb, total_mb) = match resource {
+        ResourceKind::Memory => (usage.used_memory, usage.node.memory),
+        ResourceKind::Disk => (usage.used_disk, usage.node.disk),
+    };
+    let title = format!(
+        "Node {} is over 85% {} ({}%)",
+        usage.node.name,
+        resource.label(),
+        percent
+    );
+    let content = format!(
+        "Node {} has {} of its {} allocated ({} of {}). New servers should not be deployed to this node until usage drops below 80%.",
+        usage.node.name,
+        format_mb(used_mb),
+        resource.label(),
+        format_mb(used_mb),
+        format_mb(total_mb),
+    );
+    let cache_key = alert_cache_key(usage.node.uuid, resource);
+
+    let announcement = match Announcement::create(
+        state,
+        CreateAnnouncementOptions {
+            r#type: AnnouncementType::Warning,
+            enabled: true,
+            enabled_start: None,
+            enabled_end: None,
+            dismissible: true,
+            dismissible_end: None,
+            title: title.clone().into(),
+            title_translations: BTreeMap::new(),
+            content: content.clone().into(),
+            content_translations: BTreeMap::new(),
+            locations: Vec::new(),
+            nodes: vec![usage.node.uuid],
+            backup_configurations: Vec::new(),
+            eggs: Vec::new(),
+        },
+    )
+    .await
+    {
+        Ok(announcement) => announcement,
+        Err(err) => {
+            tracing::error!(
+                node = %usage.node.uuid,
+                "failed to create node resource alert announcement: {err:#?}"
+            );
+            return;
+        }
+    };
+
+    if let Err(err) = state
+        .cache
+        .set(
+            &cache_key,
+            ALERT_COOLDOWN_SECONDS,
+            &announcement.uuid.to_string(),
+        )
+        .await
+    {
+        tracing::warn!(
+            node = %usage.node.uuid,
+            "failed to store node resource alert state, alert may repeat: {err:#?}"
+        );
+    }
+
+    if let Err(err) = AdminActivity::create(
+        state,
+        CreateAdminActivityOptions {
+            user_uuid: None,
+            impersonator_uuid: None,
+            api_key_uuid: None,
+            event: "node:resource-warning".into(),
+            ip: None,
+            data: serde_json::json!({
+                "node_uuid": usage.node.uuid,
+                "node_name": usage.node.name,
+                "resource": resource.as_str(),
+                "used_ratio": used_ratio,
+                "used_mb": used_mb,
+                "total_mb": total_mb,
+                "announcement_uuid": announcement.uuid,
+            }),
+            created: None,
+        },
+    )
+    .await
+    {
+        tracing::warn!(
+            node = %usage.node.uuid,
+            "failed to log node resource alert activity: {err:#?}"
+        );
+    }
+
+    tracing::warn!(
+        node = %usage.node.uuid,
+        resource = resource.as_str(),
+        percent,
+        "node crossed 85% allocated {resource}",
+    );
+}
+
+/// Clear a previously raised resource alert: dismiss its announcement and
+/// log the recovery. Called when usage drops below [`CLEAR_THRESHOLD`].
+async fn clear_node_resource_alert(
+    state: &shared::State,
+    usage: &shared::node_recommendation::NodeUsage,
+    resource: ResourceKind,
+    used_ratio: f64,
+    announcement_uuid: &str,
+) {
+    let cache_key = alert_cache_key(usage.node.uuid, resource);
+
+    match uuid::Uuid::parse_str(announcement_uuid) {
+        Ok(uuid) => match Announcement::by_uuid_optional(&state.database, uuid).await {
+            Ok(Some(announcement)) => {
+                if let Err(err) = announcement.delete(state, ()).await {
+                    tracing::warn!(
+                        node = %usage.node.uuid,
+                        "failed to delete cleared node resource alert announcement: {err:#?}"
+                    );
+                }
+            }
+            Ok(None) => {}
+            Err(err) => {
+                tracing::warn!(
+                    node = %usage.node.uuid,
+                    "failed to load node resource alert announcement for clearing: {err:#?}"
+                );
+            }
+        },
+        Err(err) => {
+            tracing::warn!(
+                node = %usage.node.uuid,
+                "stored node resource alert announcement uuid is invalid: {err:#?}"
+            );
+        }
+    }
+
+    if let Err(err) = state.cache.invalidate(&cache_key).await {
+        tracing::warn!(
+            node = %usage.node.uuid,
+            "failed to clear node resource alert state: {err:#?}"
+        );
+    }
+
+    if let Err(err) = AdminActivity::create(
+        state,
+        CreateAdminActivityOptions {
+            user_uuid: None,
+            impersonator_uuid: None,
+            api_key_uuid: None,
+            event: "node:resource-recovered".into(),
+            ip: None,
+            data: serde_json::json!({
+                "node_uuid": usage.node.uuid,
+                "node_name": usage.node.name,
+                "resource": resource.as_str(),
+                "used_ratio": used_ratio,
+            }),
+            created: None,
+        },
+    )
+    .await
+    {
+        tracing::warn!(
+            node = %usage.node.uuid,
+            "failed to log node resource recovery activity: {err:#?}"
+        );
+    }
+
+    tracing::info!(
+        node = %usage.node.uuid,
+        resource = resource.as_str(),
+        "node resource usage dropped below 80%, alert cleared",
+    );
+}
+
+/// Check every node's allocated RAM/disk every 5 minutes and alert when one
+/// crosses 85% used. Alerts are de-duplicated with a 6-hour cooldown in the
+/// cache (see [`raise_node_resource_alert`]) and cleared — announcement
+/// dismissed, recovery logged — when usage drops below 80%. Usage between
+/// 80% and 85% leaves the current alert state untouched (hysteresis), and a
+/// cache failure skips alerting for that tick rather than spamming.
+async fn check_node_resource_alerts(state: &shared::State) -> Result<(), anyhow::Error> {
+    let usages = match shared::node_recommendation::fetch_all_node_usages(&state.database).await {
+        Ok(usages) => usages,
+        Err(err) => {
+            tracing::warn!("failed to load node utilisation for resource alerts: {err:#?}");
+            return Ok(());
+        }
+    };
+
+    for usage in &usages {
+        for resource in [ResourceKind::Memory, ResourceKind::Disk] {
+            let used_ratio = match resource {
+                ResourceKind::Memory => usage.memory_used_ratio(),
+                ResourceKind::Disk => usage.disk_used_ratio(),
+            };
+            let cache_key = alert_cache_key(usage.node.uuid, resource);
+
+            if used_ratio >= WARN_THRESHOLD {
+                match state.cache.get::<String>(&cache_key).await {
+                    Ok(Some(_)) => {
+                        // Alert already raised and still within its cooldown.
+                    }
+                    Ok(None) => {
+                        raise_node_resource_alert(state, usage, resource, used_ratio).await;
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            node = %usage.node.uuid,
+                            "failed to read node resource alert state, skipping alert: {err:#?}"
+                        );
+                    }
+                }
+            } else if used_ratio < CLEAR_THRESHOLD {
+                match state.cache.get::<String>(&cache_key).await {
+                    Ok(Some(announcement_uuid)) => {
+                        clear_node_resource_alert(
+                            state,
+                            usage,
+                            resource,
+                            used_ratio,
+                            &announcement_uuid,
+                        )
+                        .await;
+                    }
+                    Ok(None) => {}
+                    Err(err) => {
+                        tracing::warn!(
+                            node = %usage.node.uuid,
+                            "failed to read node resource alert state, skipping recovery: {err:#?}"
+                        );
+                    }
+                }
+            }
+            // Between 80% and 85%: hysteresis band, leave the alert state alone.
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn define_background_tasks(
     background_task_builder: &shared::extensions::background_tasks::BackgroundTaskBuilder,
 ) {
@@ -446,6 +707,13 @@ pub async fn define_background_tasks(
 
                 Ok(())
             },
+        )
+        .await;
+    background_task_builder
+        .add_cron_task(
+            "check_node_resource_alerts",
+            croner::Cron::from_str("0 */5 * * * *").unwrap(),
+            async |state| check_node_resource_alerts(&state).await,
         )
         .await;
     background_task_builder

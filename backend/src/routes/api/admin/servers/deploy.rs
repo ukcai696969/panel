@@ -62,6 +62,15 @@ mod post {
         #[schema(minimum = 0.0, maximum = 1.0, default = 0.5)]
         randomness: f64,
 
+        /// When true, rank candidate nodes with the smart node picker
+        /// (`shared::node_recommendation`) — most free RAM/disk first, with
+        /// maintenance, over-85%-used and allocation-less nodes penalised or
+        /// excluded — instead of the randomised most-eligible ranking.
+        /// `randomness` is ignored when this is set.
+        #[serde(default)]
+        #[garde(skip)]
+        use_smart_pick: bool,
+
         #[garde(dive)]
         allocations: Option<EggConfigAllocationsDeployment>,
     }
@@ -159,15 +168,49 @@ mod post {
 
         let variables = NestEggVariable::all_by_egg_uuid(&state.database, data.egg_uuid).await?;
 
-        let nodes = Node::by_location_uuids_most_eligible(
-            &state.database,
-            &data.deployment.location_uuids,
-            data.limits,
-            data.deployment.allow_overallocation,
-            data.deployment.suspension_penalty,
-            data.deployment.randomness,
-        )
-        .await?;
+        // Candidate nodes, best first. Smart pick scores nodes by free
+        // RAM/disk (and relative CPU load) and excludes nodes in
+        // maintenance, without free allocations, or without room for the
+        // requested limits; the default path keeps the existing randomised
+        // most-eligible ranking.
+        let (nodes, recommended_node) = if data.deployment.use_smart_pick {
+            let usages = shared::node_recommendation::fetch_node_usages(
+                &state.database,
+                &data.deployment.location_uuids,
+                data.deployment.suspension_penalty,
+            )
+            .await?;
+            let scored = shared::node_recommendation::recommend_nodes(
+                usages,
+                data.limits.memory,
+                data.limits.disk,
+                data.deployment.allow_overallocation,
+            );
+            let recommended = scored
+                .iter()
+                .find(|scored| scored.eligible())
+                .map(|scored| (scored.usage.node.uuid, scored.score.unwrap_or(0.0)));
+            let nodes = scored
+                .into_iter()
+                .filter(|scored| scored.eligible())
+                .map(|scored| scored.usage.node)
+                .collect::<Vec<_>>();
+
+            (nodes, recommended)
+        } else {
+            (
+                Node::by_location_uuids_most_eligible(
+                    &state.database,
+                    &data.deployment.location_uuids,
+                    data.limits,
+                    data.deployment.allow_overallocation,
+                    data.deployment.suspension_penalty,
+                    data.deployment.randomness,
+                )
+                .await?,
+                None,
+            )
+        };
 
         let egg = if data.deployment.allocations.is_none() {
             NestEgg::by_uuid_optional_cached(&state.database, data.egg_uuid).await?
@@ -423,6 +466,10 @@ mod post {
 
                     "feature_limits": data.feature_limits,
                     "variables": data.variables,
+
+                    "deployment_smart_pick": data.deployment.use_smart_pick,
+                    "deployment_recommended_node_uuid": recommended_node.map(|(uuid, _)| uuid),
+                    "deployment_recommended_node_score": recommended_node.map(|(_, score)| score),
                 }),
             )
             .await;

@@ -59,6 +59,7 @@ import { useAdminCan } from '@/plugins/usePermissions.ts';
 import { useToast } from '@/providers/ToastProvider.tsx';
 import { useTranslations } from '@/providers/TranslationProvider.tsx';
 import { serverCreateEmptyFormValues, useEggDefaults, useServerFormFields } from './serverFormValues.tsx';
+import RecommendedNodeHint from './RecommendedNodeHint.tsx';
 import ServerTemplatePicker from './ServerTemplatePicker.tsx';
 
 type ServerCreateFormValues = z.infer<typeof adminServerCreateFormSchema>;
@@ -311,6 +312,9 @@ export default function ServerCreate() {
       deploying,
     });
 
+  const deployment = form.getValues().deployment;
+  const smartPickEnabled = deploying && !!deployment?.useSmartPick;
+
   return (
     <AdminContentContainer
       title={t('pages.admin.servers.tabs.general.page.titleCreate', {})}
@@ -384,6 +388,18 @@ export default function ServerCreate() {
               icon={faAddressCard}
             >
               <FormEngine form={form} fields={serverAssignmentFields} />
+              {smartPickEnabled && (
+                <div className='mt-4'>
+                  <RecommendedNodeHint
+                    memory={form.getValues().limits.memory}
+                    cpu={form.getValues().limits.cpu}
+                    disk={form.getValues().limits.disk}
+                    locationUuids={deployment?.locationUuids ?? []}
+                    allowOverallocation={deployment?.allowOverallocation ?? false}
+                    enabled={smartPickEnabled}
+                  />
+                </div>
+              )}
             </TitleCard>
 
             <TitleCard title={t('pages.admin.servers.tabs.general.page.card.resourceLimits', {})} icon={faStopwatch}>

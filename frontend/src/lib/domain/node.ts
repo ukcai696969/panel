@@ -12,6 +12,13 @@ export const MAX_TRANSFER_MULTIPLEX_CHANNELS = 16;
 
 export const NODE_DEPLOYMENT_NEARLY_FULL_RATIO = 0.9;
 
+/// Allocated RAM/disk share at which a node is flagged as over capacity
+/// (warning badge, capacity bar in red, background resource alert).
+/// Matches the backend `WARN_THRESHOLD` in `shared/src/node_recommendation.rs`.
+export const NODE_RESOURCE_WARN_RATIO = 0.85;
+/// Allocated share below which a raised resource alert is considered cleared.
+export const NODE_RESOURCE_CLEAR_RATIO = 0.8;
+
 export type NodeDeploymentState = 'disabled' | 'maintenance' | 'full' | 'nearlyFull' | 'available';
 
 export const nodeDeploymentStateInfo: Record<NodeDeploymentState, { badgeColor: string; label: () => string }> = {
@@ -62,6 +69,32 @@ export const getNodeDeploymentState = (
   if (highest >= NODE_DEPLOYMENT_NEARLY_FULL_RATIO) return 'nearlyFull';
 
   return 'available';
+};
+
+export type NodeResourceWarning = {
+  resource: 'memory' | 'disk';
+  used: number;
+  limit: number;
+  ratio: number;
+};
+
+/**
+ * Resources of a node whose allocated share is at or above
+ * `NODE_RESOURCE_WARN_RATIO` (85%). Takes the usage object returned by
+ * {@link getNodeDeploymentUsage}; a `null` usage (capacities not loaded yet)
+ * yields no warnings.
+ */
+export const getNodeResourceWarnings = (
+  usage: ReturnType<typeof getNodeDeploymentUsage> | null,
+): NodeResourceWarning[] => {
+  if (!usage) return [];
+
+  return (Object.keys(usage) as ('memory' | 'disk')[])
+    .map((resource) => {
+      const { used, limit } = usage[resource];
+      return { resource, used, limit, ratio: limit === 0 ? 0 : used / limit };
+    })
+    .filter((warning) => warning.ratio >= NODE_RESOURCE_WARN_RATIO);
 };
 
 export const isNodeAIO = (node: z.infer<typeof adminNodeSchema>) => {

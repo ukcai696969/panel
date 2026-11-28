@@ -87,6 +87,7 @@ export const serverDeploymentDefaultValues: AdminServerDeploy['deployment'] = {
   allowOverallocation: false,
   suspensionPenalty: 0.5,
   randomness: 0.5,
+  useSmartPick: false,
 };
 
 export const serverUpdateEmptyFormValues: ServerUpdateFormValues = {
@@ -537,6 +538,12 @@ function buildServerAssignmentFields<T extends ServerEggAssignmentFormValues>(
       name: 'deployment.allowOverallocation',
       label: t('pages.admin.servers.tabs.general.page.form.deploymentAllowOverallocation', {}),
       description: t('pages.admin.servers.tabs.general.page.form.deploymentAllowOverallocationDescription', {}),
+    },
+    {
+      type: 'switch',
+      name: 'deployment.useSmartPick',
+      label: t('pages.admin.servers.tabs.general.page.form.deploymentSmartPick', {}),
+      description: t('pages.admin.servers.tabs.general.page.form.deploymentSmartPickDescription', {}),
     },
     {
       type: 'number',

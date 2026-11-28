@@ -894,7 +894,9 @@
           "memoryUsage": "Memory: {used} / {limit}",
           "memoryUsageUnlimited": "Memory: {used} used, no node limit",
           "diskUsage": "Disk: {used} / {limit}",
-          "diskUsageUnlimited": "Disk: {used} used, no node limit"
+          "diskUsageUnlimited": "Disk: {used} used, no node limit",
+          "over85Memory": "Over 85% RAM ({percent}%)",
+          "over85Disk": "Over 85% disk ({percent}%)"
         },
         "allowedSources": {
           "checking": "Checking Node",
@@ -2662,7 +2664,13 @@
                 "card": {
                   "systemOverview": "System Overview",
                   "generalStatistics": "General Statistics",
-                  "backupStatistics": "Backup Statistics"
+                  "backupStatistics": "Backup Statistics",
+                  "nodeCapacity": "Node capacity warnings"
+                },
+                "nodeCapacity": {
+                  "over85Memory": "Over 85% RAM ({percent}%)",
+                  "over85Disk": "Over 85% disk ({percent}%)",
+                  "hint": "Nodes over 85% allocated RAM or disk are flagged here and the smart node picker avoids them."
                 },
                 "system": {
                   "memoryUsage": "Memory Usage ({process} used by Panel)",
@@ -4486,7 +4494,9 @@
                 "alert": {
                   "suspended": "This server is suspended.",
                   "selectEggForVariables": "Please select an egg before you can configure variables.",
-                  "deploymentAllocations": "Allocations are picked from the egg configuration of the node the server is deployed to. If that configuration doesn't define any, the server is created without allocations."
+                  "deploymentAllocations": "Allocations are picked from the egg configuration of the node the server is deployed to. If that configuration doesn't define any, the server is created without allocations.",
+                  "recommendedNode": "Recommended node: {node} — {reason}",
+                  "noRecommendedNode": "No node in the selected locations can take this server: {reason}"
                 },
                 "badge": {
                   "serverSuspended": "Server Suspended"
@@ -4544,6 +4554,8 @@
                   "deploymentSuspensionPenaltyDescription": "How much the resources of suspended servers count towards node usage, from 0 to 1.",
                   "deploymentRandomness": "Randomness",
                   "deploymentRandomnessDescription": "How much randomness is mixed into the node choice, from 0 (always the least used node) to 1.",
+                  "deploymentSmartPick": "Auto-pick best node",
+                  "deploymentSmartPickDescription": "Pick the node with the most free RAM and disk instead of the randomised ranking.",
                   "startupCommandCustom": "Custom",
                   "predefinedStartupCommands": "Predefined Startup Commands",
                   "labels": "Container Labels",

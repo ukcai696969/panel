@@ -115,6 +115,7 @@ export const adminServerDeploymentSchema = z.object({
   allowOverallocation: z.boolean(),
   suspensionPenalty: z.number().min(0).max(1),
   randomness: z.number().min(0).max(1),
+  useSmartPick: z.boolean(),
 });
 
 export const adminServerCreateFormSchema = z.lazy(() =>

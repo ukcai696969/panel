@@ -40,6 +40,7 @@ import { useTranslations } from '@/providers/TranslationProvider.tsx';
 import BackupStatsPanel from '../../backup-configurations/BackupStatsPanel.tsx';
 import ExtensionBuildFailedAlert from '../ExtensionBuildFailedAlert.tsx';
 import PanelUpdateAlert from '../PanelUpdateAlert.tsx';
+import NodeCapacityAlerts from './NodeCapacityAlerts.tsx';
 
 export default function AdminOverview() {
   const { t } = useTranslations();
@@ -102,6 +103,10 @@ export default function AdminOverview() {
           </Text>
         }
       >
+        <AdminCan action='nodes.read'>
+          <NodeCapacityAlerts />
+        </AdminCan>
+
         <TitleCard title={t('pages.admin.home.tabs.overview.page.card.systemOverview', {})} icon={faStethoscope}>
           <ResourceView resource={systemOverview}>
             {(overview) => {
@@ -253,8 +258,7 @@ export default function AdminOverview() {
                 {
                   icon: faComputer,
                   value: stats.servers,
-                  label: t('pages.admin.home.tabs.overview.page.stats.servers', {}),
-                },
+                  label: t('pages.admin.home.tabs.overview.page.stats.servers', {})},
                 {
                   icon: faEarth,
                   value: stats.locations,

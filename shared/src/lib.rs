@@ -38,6 +38,7 @@ pub mod jwt;
 pub mod mail;
 pub mod models;
 pub mod net;
+pub mod node_recommendation;
 pub mod ntp;
 pub mod payload;
 pub mod permissions;

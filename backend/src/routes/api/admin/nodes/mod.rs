@@ -5,6 +5,7 @@ mod _node_;
 mod capacities;
 mod config;
 mod probe;
+mod recommended;
 
 mod get {
     use axum::{extract::Query, http::StatusCode};
@@ -151,6 +152,7 @@ pub fn router(state: &State) -> OpenApiRouter<State> {
         .nest("/capacities", capacities::router(state))
         .nest("/config", config::router(state))
         .nest("/probe", probe::router(state))
+        .nest("/recommended", recommended::router(state))
         .routes(routes!(get::route))
         .routes(routes!(post::route))
         .with_state(state.clone())

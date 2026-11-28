@@ -3,6 +3,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { forwardRef, ReactNode } from 'react';
 import { z } from 'zod';
 import Badge from '@/elements/data-display/Badge.tsx';
+import NodeCapacityBar from '@/elements/data-display/NodeCapacityBar.tsx';
 import { TableData, TableRow, TableSelectionCell } from '@/elements/data-display/Table.tsx';
 import TableLink from '@/elements/data-display/TableLink.tsx';
 import Spinner from '@/elements/feedback/Spinner.tsx';
@@ -10,7 +11,7 @@ import { ContextMenuChildrenProps, ContextMenuToggle } from '@/elements/overlays
 import Tooltip from '@/elements/overlays/Tooltip.tsx';
 import FormattedTimestamp from '@/elements/time/FormattedTimestamp.tsx';
 import Code from '@/elements/typography/Code.tsx';
-import { isNodeAIO, nodeDeploymentStateInfo } from '@/lib/domain/node.ts';
+import { getNodeResourceWarnings, isNodeAIO, nodeDeploymentStateInfo } from '@/lib/domain/node.ts';
 import { bytesToString, mbToBytes } from '@/lib/format/size.ts';
 import { AdminNode } from '@/lib/schemas/admin/nodes.ts';
 import { adminUpgradeStatusSchema } from '@/lib/schemas/admin/system.ts';
@@ -40,6 +41,7 @@ const NodeRow = forwardRef<HTMLTableRowElement, NodeRowProps>(function NodeRow(
     servers: deploymentServers,
     loading: deploymentLoading,
   } = useNodeDeployment(node);
+  const resourceWarnings = getNodeResourceWarnings(deploymentUsage);
 
   return (
     <TableRow
@@ -141,6 +143,31 @@ const NodeRow = forwardRef<HTMLTableRowElement, NodeRowProps>(function NodeRow(
           )}
           {nameSection}
         </span>
+        {resourceWarnings.length > 0 && (
+          <span className='flex gap-2 items-center mt-1 flex-wrap'>
+            {resourceWarnings.map((warning) => (
+              <Badge key={warning.resource} color='red' variant='light'>
+                {warning.resource === 'memory'
+                  ? t('common.node.deployment.over85Memory', { percent: Math.round(warning.ratio * 100) })
+                  : t('common.node.deployment.over85Disk', { percent: Math.round(warning.ratio * 100) })}
+              </Badge>
+            ))}
+          </span>
+        )}
+        {deploymentUsage && resourceWarnings.length > 0 && (
+          <div className='mt-2 flex flex-col gap-1 min-w-48 max-w-72'>
+            <NodeCapacityBar
+              label={t('common.form.memory', {})}
+              usedMb={deploymentUsage.memory.used}
+              limitMb={deploymentUsage.memory.limit}
+            />
+            <NodeCapacityBar
+              label={t('pages.admin.servers.tabs.general.page.form.diskSpace', {})}
+              usedMb={deploymentUsage.disk.used}
+              limitMb={deploymentUsage.disk.limit}
+            />
+          </div>
+        )}
       </TableData>
 
       <TableData>

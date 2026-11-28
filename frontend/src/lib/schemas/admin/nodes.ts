@@ -187,3 +187,24 @@ export const adminNodeBandwidthSchema = z.object({
   ready: z.boolean(),
   reason: z.string().nullable(),
 });
+
+export const adminRecommendedNodeSchema = z.looseObject({
+  node: z.lazy(() => adminNodeSchema),
+  score: z.number(),
+  reason: z.string(),
+  warnings: z.array(z.string()),
+  memoryFreeMb: z.number(),
+  diskFreeMb: z.number(),
+  memoryUsedRatio: z.number(),
+  diskUsedRatio: z.number(),
+  overThreshold: z.array(z.enum(['memory', 'disk'])),
+});
+
+export const adminNodeRecommendationSchema = z.object({
+  node: adminRecommendedNodeSchema.nullable(),
+  reason: z.string().nullable(),
+  alternatives: z.array(adminRecommendedNodeSchema),
+});
+
+export type AdminRecommendedNode = z.infer<typeof adminRecommendedNodeSchema>;
+export type AdminNodeRecommendation = z.infer<typeof adminNodeRecommendationSchema>;
