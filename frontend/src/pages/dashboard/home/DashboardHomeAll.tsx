@@ -175,7 +175,7 @@ export default function DashboardHomeAll() {
       ) : (
         <div
           className={classNames(
-            'gap-4 grid md:grid-cols-2',
+            'gap-3 md:gap-4 grid grid-cols-1 md:grid-cols-2',
             loading && 'opacity-50 pointer-events-none transition-opacity',
           )}
         >

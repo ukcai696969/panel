@@ -18,6 +18,7 @@ import {
   faUsers,
 } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import classNames from 'classnames';
 import { useCallback, useMemo, useState } from 'react';
 import { NavLink } from 'react-router';
 import { z } from 'zod';
@@ -72,7 +73,7 @@ export default function ServerItem({
   const serverGroups = useUserStore((state) => state.serverGroups);
   const [serverListShowOthers] = useServerListShowOthers();
 
-  const [openModal, setOpenModal] = useState<'add-group' | 'kill' | null>(null);
+  const [openModal, setOpenModal] = useState<'add-group' | 'kill' | 'stop' | null>(null);
   const stats = useServerStats(server);
   const statsUnavailable = useServerStatsUnavailable(server);
 
@@ -99,6 +100,27 @@ export default function ServerItem({
     (action: z.infer<typeof serverPowerAction>) => handleBulkPowerAction([server.uuid], action),
     [handleBulkPowerAction, server.uuid],
   );
+
+  // One-tap power action for phones: Start when offline, Stop when running.
+  // It uses the REST power endpoint (not the console websocket), so it works
+  // even when the console socket is down. Stop asks for confirmation first.
+  const quickPowerAction: z.infer<typeof serverPowerAction> | null =
+    state === 'offline' ? 'start' : state ? 'stop' : null;
+  const quickPowerAllowed =
+    quickPowerAction !== null &&
+    canPower(quickPowerAction === 'start' ? 'control.start' : 'control.stop') &&
+    !powerBlocked &&
+    bulkActionLoading === null;
+  const onQuickPowerClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!quickPowerAllowed || !quickPowerAction) return;
+    if (quickPowerAction === 'stop') {
+      setOpenModal('stop');
+    } else {
+      doPowerAction(quickPowerAction);
+    }
+  };
 
   const diskLimit = server.limits.disk !== 0 ? bytesToString(mbToBytes(server.limits.disk)) : t('common.unlimited', {});
   const memoryLimit =
@@ -161,6 +183,16 @@ export default function ServerItem({
         {t('pages.server.console.power.modal.forceStop.content', {}).md()}
       </ConfirmationModal>
 
+      <ConfirmationModal
+        opened={openModal === 'stop'}
+        onClose={() => setOpenModal(null)}
+        title={`Stop ${server.name}?`}
+        confirm={t('common.enum.serverPowerAction.stop', {})}
+        onConfirmed={() => doPowerAction('stop')}
+      >
+        {`Are you sure you want to stop ${server.name}? Players will be disconnected.`}
+      </ConfirmationModal>
+
       <ContextMenu enabled={showContextMenu} items={contextMenuItems}>
         {({ items, openMenu }) => (
           <div className='min-w-0'>
@@ -200,6 +232,7 @@ export default function ServerItem({
                             size='input-sm'
                             variant={isSelected ? undefined : 'light'}
                             color={isSelected ? 'green' : 'gray'}
+                            className='min-h-11 min-w-11 shrink-0'
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
@@ -210,6 +243,16 @@ export default function ServerItem({
                           </ActionIcon>
                         </Tooltip>
                       )}
+                      {/* Status dot: readable at a glance on a phone without opening the card. */}
+                      <span
+                        className={classNames(
+                          'size-2.5 shrink-0 rounded-full',
+                          statusToColor(state),
+                          (state === 'starting' || state === 'stopping') && 'animate-pulse',
+                        )}
+                        aria-label={state ? t(`common.enum.serverState.${state}`, {}) : undefined}
+                        title={state ? t(`common.enum.serverState.${state}`, {}) : undefined}
+                      />
                       <span className='text-xl font-medium flex items-center gap-2 min-w-0 flex-1'>
                         <ScrollingText className='flex-1'>{server.name}</ScrollingText>
                         {showForeignServerBadge && !server.isOwner && (
@@ -234,6 +277,33 @@ export default function ServerItem({
                       </span>
                     </div>
                     <div className='flex flex-row items-center min-w-0 @md:justify-end @md:max-w-none'>
+                      {quickPowerAction && (
+                        <Tooltip
+                          label={
+                            quickPowerAction === 'start'
+                              ? t('common.enum.serverPowerAction.start', {})
+                              : t('common.enum.serverPowerAction.stop', {})
+                          }
+                          className='mr-2'
+                        >
+                          <ActionIcon
+                            size='input-sm'
+                            variant='light'
+                            color={quickPowerAction === 'start' ? 'green' : 'red'}
+                            disabled={!quickPowerAllowed}
+                            loading={bulkActionLoading === quickPowerAction}
+                            aria-label={
+                              quickPowerAction === 'start'
+                                ? t('common.enum.serverPowerAction.start', {})
+                                : t('common.enum.serverPowerAction.stop', {})
+                            }
+                            className='min-h-11 min-w-11 shrink-0'
+                            onClick={onQuickPowerClick}
+                          >
+                            <FontAwesomeIcon icon={quickPowerAction === 'start' ? faPlay : faStop} />
+                          </ActionIcon>
+                        </Tooltip>
+                      )}
                       {server.allocation ? (
                         server.egg.separatePort ? (
                           <div className='flex flex-row gap-2 min-w-0'>
@@ -288,6 +358,7 @@ export default function ServerItem({
                             size='input-sm'
                             variant='light'
                             disabled={availableServerGroups.length === 0}
+                            className='min-h-11 min-w-11 shrink-0'
                             onClick={(e) => {
                               e.preventDefault();
                               setOpenModal('add-group');
@@ -303,6 +374,7 @@ export default function ServerItem({
                             size='input-sm'
                             color='red'
                             variant='light'
+                            className='min-h-11 min-w-11 shrink-0'
                             onClick={(e) => {
                               e.preventDefault();
                               onGroupRemove();
@@ -319,6 +391,7 @@ export default function ServerItem({
                             variant='light'
                             color='gray'
                             loading={bulkActionLoading !== null}
+                            className='min-h-11 min-w-11 shrink-0'
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();

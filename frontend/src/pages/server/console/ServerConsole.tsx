@@ -15,9 +15,12 @@ import { useCurrentWindow } from '@/providers/CurrentWindowProvider.tsx';
 import { useTranslations } from '@/providers/TranslationProvider.tsx';
 import { useServerStore } from '@/stores/server.ts';
 import PlayersPanel from './players/PlayersPanel.tsx';
+import OfflineQueueBanner from './OfflineQueueBanner.tsx';
 import ServerIndicators from './stats/ServerIndicators.tsx';
 import ServerMetricTiles from './stats/ServerMetricTiles.tsx';
+import MobileConsoleActionBar from './stats/MobileConsoleActionBar.tsx';
 import ServerPowerControls from './stats/ServerPowerControls.tsx';
+import ServerStatsCollapsible from './stats/ServerStatsCollapsible.tsx';
 import Console from './terminal/Console.tsx';
 
 export default function ServerConsole() {
@@ -26,6 +29,10 @@ export default function ServerConsole() {
   const keyboardInset = useVisualViewportBottomInset();
   const titleHoisted = useNavbarPageHeader({ title: server.name, subtitle: server.description || undefined });
   const detailsInInfobar = usePageBreakpoint('md');
+  // Below `md` the infobar power buttons are replaced by the sticky bottom
+  // action bar; at `xl` the metric tiles get their own grid column, and
+  // below that they live behind the collapsible stats section.
+  const showDesktopStats = usePageBreakpoint('xl');
 
   const infobarSentinelRef = useRef<HTMLDivElement>(null);
   const [infobarStuck, setInfobarStuck] = useState(false);
@@ -72,7 +79,10 @@ export default function ServerConsole() {
         {detailsInInfobar && <ServerIndicators />}
       </div>
       <ServerCan action={['control.start', 'control.stop', 'control.restart']} matchAny>
-        <ServerPowerControls />
+        {/* Hidden on phones: MobileConsoleActionBar at the bottom of the page is the touch target there. */}
+        <div className='hidden md:block'>
+          <ServerPowerControls />
+        </div>
       </ServerCan>
     </Group>
   );
@@ -108,13 +118,15 @@ export default function ServerConsole() {
         </Card>
       )}
 
+      <OfflineQueueBanner />
+
       <ChartSyncGroup>
         <div
           ref={layoutRef}
           className='grid xl:grid-cols-4 gap-4 mb-4 xl:min-h-[calc(var(--console-fit-height)-var(--console-fit-reserve))]'
         >
           <div
-            className='xl:col-span-3 flex flex-col h-[60vh] xl:h-auto'
+            className='xl:col-span-3 flex flex-col h-[60vh] min-h-64 xl:h-auto'
             style={
               keyboardInset > 0
                 ? { height: `max(8rem, min(60vh, calc(100dvh - ${keyboardInset}px - 7rem)))` }
@@ -124,8 +136,10 @@ export default function ServerConsole() {
             <Console />
           </div>
 
-          <ServerMetricTiles />
+          {showDesktopStats && <ServerMetricTiles />}
         </div>
+
+        {!showDesktopStats && <ServerStatsCollapsible />}
 
         {window.extensionContext.extensionRegistry.pages.server.console.statBlocks.length > 0 && (
           <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
@@ -144,6 +158,13 @@ export default function ServerConsole() {
           </div>
         </div>
       </ServerCan>
+
+      {/* Mobile bottom action bar: large Start / Stop / Restart buttons with a
+          confirm step for Stop. Sticky to the bottom of the page scroll area
+          on phones only; includes the iOS safe-area inset. */}
+      <div className='sticky bottom-0 z-20 md:hidden -mx-4 lg:-mx-6 px-4 pt-3 bg-(--mantine-color-body) border-t border-(--mantine-color-default-border) pb-[max(0.75rem,env(safe-area-inset-bottom))]'>
+        <MobileConsoleActionBar />
+      </div>
     </ServerContentContainer>
   );
 }

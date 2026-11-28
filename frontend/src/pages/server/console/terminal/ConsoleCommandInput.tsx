@@ -1,14 +1,16 @@
-import { faTerminal, faXmark } from '@fortawesome/free-solid-svg-icons';
+import { faPaperPlane, faTerminal, faXmark } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { KeyboardEvent, RefObject, useEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import ActionIcon from '@/elements/buttons/ActionIcon.tsx';
+import Button from '@/elements/buttons/Button.tsx';
 import { ServerCan } from '@/elements/Can.tsx';
 import ExtensionSlot from '@/elements/ExtensionSlot.tsx';
 import Autocomplete from '@/elements/input/Autocomplete.tsx';
 import TextInput from '@/elements/input/TextInput.tsx';
 import Popover from '@/elements/overlays/Popover.tsx';
 import Tooltip from '@/elements/overlays/Tooltip.tsx';
+import { useOfflineQueue } from '@/lib/console/offlineQueue.ts';
 import { commandSnippetFilter } from '@/lib/editor/xterm.ts';
 import { useTranslations } from '@/providers/TranslationProvider.tsx';
 import { useServerStore } from '@/stores/server.ts';
@@ -22,6 +24,8 @@ interface ConsoleCommandInputProps {
   commandPrefix: string;
   setCommandPrefix: (value: string) => void;
   onKeyDown: (e: KeyboardEvent<HTMLInputElement>) => void;
+  /** Sends (or, while disconnected, queues) the current input. */
+  onSubmit: () => void;
 }
 
 export default function ConsoleCommandInput({
@@ -33,6 +37,7 @@ export default function ConsoleCommandInput({
   commandPrefix,
   setCommandPrefix,
   onKeyDown,
+  onSubmit,
 }: ConsoleCommandInputProps) {
   const { t } = useTranslations();
   const { commandSnippets, socketConnected, state } = useServerStore(
@@ -42,7 +47,11 @@ export default function ConsoleCommandInput({
       state: s.state,
     })),
   );
-  const disabled = !socketConnected || state === 'offline';
+  const queued = useOfflineQueue();
+  // Typing stays enabled while the websocket is down so a command can be
+  // queued for replay on reconnect; only an offline server blocks input,
+  // since there is nothing for the command to run against.
+  const disabled = state === 'offline';
 
   const [prefixOpened, setPrefixOpened] = useState(false);
   const [prefixWidth, setPrefixWidth] = useState(0);
@@ -64,6 +73,14 @@ export default function ConsoleCommandInput({
     return () => observer.disconnect();
   }, [commandPrefix]);
 
+  const placeholder = !socketConnected
+    ? queued.length > 0
+      ? `Queued — will send when reconnected (${queued.length})`
+      : t('pages.server.console.input.placeholderDisconnected', {})
+    : state === 'offline'
+      ? t('pages.server.console.input.placeholderOffline', {})
+      : t('pages.server.console.input.placeholder', {});
+
   return (
     <div className='w-full mt-4 flex flex-row'>
       <ServerCan action='control.console'>
@@ -78,13 +95,7 @@ export default function ConsoleCommandInput({
             inputValueRef.current = value;
             setInputValue(value);
           }}
-          placeholder={
-            !socketConnected
-              ? t('pages.server.console.input.placeholderDisconnected', {})
-              : state === 'offline'
-                ? t('pages.server.console.input.placeholderOffline', {})
-                : t('pages.server.console.input.placeholder', {})
-          }
+          placeholder={placeholder}
           aria-label={t('pages.server.console.input.ariaLabel', {})}
           disabled={disabled}
           onKeyDown={onKeyDown}
@@ -160,6 +171,20 @@ export default function ConsoleCommandInput({
             }
           }}
         />
+        {/* Phones have no Enter key on the on-screen keyboard in a reliable
+            spot, so the input gets a real Send button (44px touch target).
+            It submits exactly like Enter, including queueing offline. */}
+        <Button
+          size='md'
+          variant='light'
+          color='gray'
+          aria-label={t('common.button.send', {})}
+          disabled={disabled || inputValue.trim().length === 0}
+          onClick={onSubmit}
+          className='ml-2 min-h-11 min-w-11 shrink-0 px-2!'
+        >
+          <FontAwesomeIcon icon={faPaperPlane} />
+        </Button>
       </ServerCan>
       <ExtensionSlot
         components={window.extensionContext.extensionRegistry.pages.server.console.terminalInputRowComponents}

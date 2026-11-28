@@ -17,6 +17,7 @@ import Button from '@/elements/buttons/Button.tsx';
 import Card from '@/elements/data-display/Card.tsx';
 import Progress from '@/elements/feedback/Progress.tsx';
 import Spinner from '@/elements/feedback/Spinner.tsx';
+import { sendOrQueueCommand } from '@/lib/console/offlineQueue.ts';
 import { downloadTextFile } from '@/lib/download/download.ts';
 import { fillBlockElements } from '@/lib/editor/xterm.ts';
 import { redactConsoleLine } from '@/lib/network/redact.ts';
@@ -117,6 +118,7 @@ export default function Terminal({ popout = false }: { popout?: boolean }) {
 
   const {
     xtermInstance,
+    fitAddonRef,
     searchAddonRef,
     selectionMenuTop,
     updateSelectionMenuRef,
@@ -143,6 +145,35 @@ export default function Terminal({ popout = false }: { popout?: boolean }) {
     updateSelectionMenuRef,
     consoleFontSize,
   });
+
+  // Phones resize the visual viewport when the on-screen keyboard opens or
+  // closes and on rotation, without the terminal container itself changing
+  // size — refit xterm on those events so the console keeps using the
+  // available width instead of leaving a stale column count behind.
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+
+    let frame: number | null = null;
+    const refit = () => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        fitAddonRef.current?.fit();
+      });
+    };
+
+    viewport.addEventListener('resize', refit);
+    viewport.addEventListener('scroll', refit);
+    window.addEventListener('orientationchange', refit);
+
+    return () => {
+      viewport.removeEventListener('resize', refit);
+      viewport.removeEventListener('scroll', refit);
+      window.removeEventListener('orientationchange', refit);
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
+  }, [fitAddonRef]);
 
   useEffect(() => {
     let pingInterval: ReturnType<typeof setInterval>;
@@ -300,6 +331,19 @@ export default function Terminal({ popout = false }: { popout?: boolean }) {
     }
   }, [openModal]);
 
+  // Sends the current input, or queues it when the websocket is down so it
+  // is replayed on reconnect (see lib/console/offlineQueue.ts). Shared by
+  // the Enter key and the mobile Send button in ConsoleCommandInput.
+  const submitCommand = useCallback(() => {
+    const command = inputValueRef.current.trim();
+    if (!command) return;
+
+    commandHistory.recordCommand(command);
+    sendOrQueueCommand(socketInstance, socketConnected, commandPrefix + command);
+    setInputValue('');
+    inputValueRef.current = '';
+  }, [commandHistory, socketInstance, socketConnected, commandPrefix]);
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (matchesShortcut(e.nativeEvent, 'console.previousCommand') && !inputValueRef.current.startsWith('!')) {
@@ -323,17 +367,11 @@ export default function Terminal({ popout = false }: { popout?: boolean }) {
         }
 
         if (e.key === 'Enter') {
-          const command = inputValueRef.current.trim();
-          if (!command) return;
-
-          commandHistory.recordCommand(command);
-          socketInstance?.send(SocketRequest.SEND_COMMAND, commandPrefix + command);
-          setInputValue('');
-          inputValueRef.current = '';
+          submitCommand();
         }
       });
     },
-    [commandHistory, socketInstance, commandPrefix],
+    [commandHistory, submitCommand],
   );
 
   useKeyboardShortcut(
@@ -533,7 +571,7 @@ export default function Terminal({ popout = false }: { popout?: boolean }) {
 
         {!isAtBottom && (
           <div className='absolute bottom-16 right-4 z-90 w-fit'>
-            <Button onClick={scrollToBottom} variant='transparent'>
+            <Button onClick={scrollToBottom} variant='transparent' className='min-h-11 min-w-11'>
               <FontAwesomeIcon icon={faArrowDown} />
             </Button>
           </div>
@@ -548,6 +586,7 @@ export default function Terminal({ popout = false }: { popout?: boolean }) {
           commandPrefix={commandPrefix}
           setCommandPrefix={setCommandPrefix}
           onKeyDown={handleKeyDown}
+          onSubmit={submitCommand}
         />
       </Card>
     </>

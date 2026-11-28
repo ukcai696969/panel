@@ -7,14 +7,18 @@ import Button from '@/elements/buttons/Button.tsx';
 import { ServerCan } from '@/elements/Can.tsx';
 import ExtensionSlot from '@/elements/ExtensionSlot.tsx';
 import ConfirmationModal from '@/elements/modals/ConfirmationModal.tsx';
+import { sendOrQueuePowerAction } from '@/lib/console/offlineQueue.ts';
 import { serverPowerAction } from '@/lib/schemas/server/server.ts';
-import { SocketRequest } from '@/plugins/websocket/useWebsocketEvent.ts';
+import { usePageBreakpoint } from '@/plugins/viewport/usePageBreakpoint.ts';
 import { useTranslations } from '@/providers/TranslationProvider.tsx';
 import { useServerStore } from '@/stores/server.ts';
 
 export default function ServerPowerControls() {
   const { t } = useTranslations();
-  const [open, setOpen] = useState(false);
+  // `null` = no confirm open; Stop now asks for confirmation too, so a stray
+  // tap (or click) cannot stop a live server. Kill keeps its own modal.
+  const [confirmAction, setConfirmAction] = useState<'stop' | 'kill' | null>(null);
+  const isMobile = !usePageBreakpoint('md');
   const { server, state, socketInstance, socketConnected } = useServerStore(
     useShallow((s) => ({
       server: s.server,
@@ -25,34 +29,58 @@ export default function ServerPowerControls() {
   );
 
   const killable = state === 'stopping';
+  const blocked = !!server.status || server.isSuspended || server.isTransferring;
+
+  // While the websocket is down the buttons stay enabled and the action is
+  // queued for replay on reconnect (see lib/console/offlineQueue.ts). The
+  // last known power state may be stale while disconnected, so state-based
+  // gating is skipped then; the hard blocks still apply.
+  const startDisabled = blocked || (!socketConnected ? false : state !== 'offline');
+  const restartDisabled = blocked || (!socketConnected ? false : !state);
+  const stopDisabled = blocked || (!socketConnected ? false : state === 'offline');
+
+  const run = (action: z.infer<typeof serverPowerAction> | 'kill-confirmed') => {
+    setConfirmAction(null);
+    sendOrQueuePowerAction(socketInstance, socketConnected, action === 'kill-confirmed' ? 'kill' : action);
+  };
 
   const onButtonClick = (action: z.infer<typeof serverPowerAction> | 'kill-confirmed') => {
     if (action === 'kill') {
-      return setOpen(true);
+      return setConfirmAction('kill');
+    }
+    if (action === 'stop') {
+      return setConfirmAction('stop');
     }
 
-    if (socketInstance) {
-      setOpen(false);
-      socketInstance.send(SocketRequest.SET_STATE, action === 'kill-confirmed' ? 'kill' : action);
-    }
+    run(action);
   };
 
   useEffect(() => {
     if (state === 'offline') {
-      setOpen(false);
+      setConfirmAction(null);
     }
   }, [state]);
 
   return (
     <div className='flex w-full md:w-fit gap-2'>
       <ConfirmationModal
-        opened={open}
-        onClose={() => setOpen(false)}
+        opened={confirmAction === 'kill'}
+        onClose={() => setConfirmAction(null)}
         title={t('pages.server.console.power.modal.forceStop.title', {})}
         confirm={t('common.button.continue', {})}
-        onConfirmed={() => onButtonClick('kill-confirmed')}
+        onConfirmed={() => run('kill-confirmed')}
       >
         {t('pages.server.console.power.modal.forceStop.content', {}).md()}
+      </ConfirmationModal>
+
+      <ConfirmationModal
+        opened={confirmAction === 'stop'}
+        onClose={() => setConfirmAction(null)}
+        title={`Stop ${server.name}?`}
+        confirm={t('common.enum.serverPowerAction.stop', {})}
+        onConfirmed={() => run('stop')}
+      >
+        {`Are you sure you want to stop ${server.name}? Players will be disconnected.`}
       </ConfirmationModal>
 
       <ExtensionSlot
@@ -65,12 +93,11 @@ export default function ServerPowerControls() {
       <ServerCan action='control.start'>
         <Button
           color='green'
-          disabled={
-            !socketConnected || state !== 'offline' || !!server.status || server.isSuspended || server.isTransferring
-          }
+          size={isMobile ? 'lg' : 'md'}
+          disabled={startDisabled}
           loading={state === 'starting'}
           onClick={() => onButtonClick('start')}
-          className='flex-1 min-w-fit'
+          className='min-h-12 md:min-h-0 flex-1 min-w-fit'
           leftSection={<FontAwesomeIcon icon={faPlay} size='sm' />}
         >
           {t('common.enum.serverPowerAction.start', {})}
@@ -79,9 +106,10 @@ export default function ServerPowerControls() {
       <ServerCan action='control.restart'>
         <Button
           color='gray'
-          disabled={!socketConnected || !state || !!server.status || server.isSuspended || server.isTransferring}
+          size={isMobile ? 'lg' : 'md'}
+          disabled={restartDisabled}
           onClick={() => onButtonClick('restart')}
-          className='flex-1 min-w-fit'
+          className='min-h-12 md:min-h-0 flex-1 min-w-fit'
           leftSection={<FontAwesomeIcon icon={faRotateRight} size='sm' />}
         >
           {t('common.enum.serverPowerAction.restart', {})}
@@ -90,11 +118,10 @@ export default function ServerPowerControls() {
       <ServerCan action='control.stop'>
         <Button
           color='red'
-          disabled={
-            !socketConnected || state === 'offline' || !!server.status || server.isSuspended || server.isTransferring
-          }
+          size={isMobile ? 'lg' : 'md'}
+          disabled={stopDisabled}
           onClick={() => onButtonClick(killable ? 'kill' : 'stop')}
-          className='flex-1 min-w-fit'
+          className='min-h-12 md:min-h-0 flex-1 min-w-fit'
           leftSection={<FontAwesomeIcon icon={killable ? faSkull : faStop} size='sm' />}
         >
           {killable ? t('common.enum.serverPowerAction.kill', {}) : t('common.enum.serverPowerAction.stop', {})}

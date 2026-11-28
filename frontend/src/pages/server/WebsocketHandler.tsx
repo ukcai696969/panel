@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { useShallow } from 'zustand/react/shallow';
 import getWebsocketToken from '@/api/server/getWebsocketToken.ts';
+import { offlineActionQueue, replayOfflineQueue } from '@/lib/console/offlineQueue.ts';
 import { SocketError, SocketErrorType, Websocket } from '@/plugins/websocket/Websocket.ts';
 import { useToast } from '@/providers/ToastProvider.tsx';
 import { useTranslations } from '@/providers/TranslationProvider.tsx';
@@ -38,6 +39,14 @@ export default function WebsocketHandler() {
 
   useEffect(() => {
     uuidRef.current = uuid;
+  }, [uuid]);
+
+  // The offline queue is memory-only and belongs to one server: bind it to
+  // the viewed server and drop anything queued if the user navigates away
+  // or to a different server, so stale actions are never replayed.
+  useEffect(() => {
+    offlineActionQueue.bindServer(uuid);
+    return () => offlineActionQueue.clear();
   }, [uuid]);
 
   const updateToken = (socket: Websocket, delayMs = 0) => {
@@ -102,6 +111,16 @@ export default function WebsocketHandler() {
           }
           tokenRefreshFailuresRef.current = 0;
           expiryFailureCountedRef.current = false;
+
+          // Replay anything the user queued while the socket was down, in
+          // order (power actions first-coalesced by the queue itself).
+          const replayed = replayOfflineQueue(socket);
+          if (replayed.length > 0) {
+            addToast(
+              `Sent ${replayed.length} queued action${replayed.length === 1 ? '' : 's'} after reconnecting.`,
+              'success',
+            );
+          }
         });
 
         socket.on('SOCKET_RECONNECT', () => {
