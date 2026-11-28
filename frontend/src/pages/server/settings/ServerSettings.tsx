@@ -8,6 +8,7 @@ import CloneServerContainer from './CloneServerContainer.tsx';
 import DebugInformationContainer from './DebugInformationContainer.tsx';
 import ReinstallContainer from './ReinstallContainer.tsx';
 import RenameContainer from './RenameContainer.tsx';
+import RestartOnCrashContainer from './RestartOnCrashContainer.tsx';
 import SaveAsTemplateContainer from './SaveAsTemplateContainer.tsx';
 import TimezoneContainer from './TimezoneContainer.tsx';
 import TrashContainer from './TrashContainer.tsx';
@@ -37,6 +38,9 @@ export default function ServerSettings() {
         </ServerCan>
         <ServerCan action='settings.auto-start'>
           <AutostartContainer />
+        </ServerCan>
+        <ServerCan action='settings.restart-on-crash'>
+          <RestartOnCrashContainer />
         </ServerCan>
         <ServerCan action='settings.timezone'>
           <TimezoneContainer />

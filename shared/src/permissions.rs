@@ -1057,6 +1057,10 @@ pub(crate) static BASE_SERVER_PERMISSIONS: LazyLock<IndexMap<&'static str, Permi
                             "auto-start",
                             "Allows changing the server's auto-start settings.",
                         ),
+                        (
+                            "restart-on-crash",
+                            "Allows changing the server's restart-on-crash setting.",
+                        ),
                         ("trash", "Allows changing the server's trash settings."),
                         ("install", "Allows triggering a reinstall of the server."),
                         (

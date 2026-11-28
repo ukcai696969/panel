@@ -12,18 +12,22 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { useComputedColorScheme } from '@mantine/core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
+import getServerLogs from '@/api/server/logs/getServerLogs.ts';
 import Button from '@/elements/buttons/Button.tsx';
 import Card from '@/elements/data-display/Card.tsx';
 import Progress from '@/elements/feedback/Progress.tsx';
 import Spinner from '@/elements/feedback/Spinner.tsx';
+import { downloadTextFile } from '@/lib/download/download.ts';
 import { fillBlockElements } from '@/lib/editor/xterm.ts';
 import { redactConsoleLine } from '@/lib/network/redact.ts';
+import { isErrorConsoleLine, stripAnsiCodes } from '@/lib/players.ts';
 import { CORE_QUICK_ACTION_CATEGORIES } from '@/lib/quickActions/coreQuickActions.tsx';
 import { useUserSetting } from '@/lib/userSettings.ts';
 import { useRedactAddresses } from '@/plugins/privacy/useRedactAddresses.ts';
 import { stepFontSize, useFontSizeZoom } from '@/plugins/quick-actions/useFontSizeZoom.ts';
 import { matchesShortcut, useKeyboardShortcut } from '@/plugins/quick-actions/useKeyboardShortcuts.ts';
 import { useQuickActions } from '@/plugins/quick-actions/useQuickActions.ts';
+import { useServerCan } from '@/plugins/usePermissions.ts';
 import { SocketEvent, SocketRequest } from '@/plugins/websocket/useWebsocketEvent.ts';
 import { useToast } from '@/providers/ToastProvider.tsx';
 import { useTranslations } from '@/providers/TranslationProvider.tsx';
@@ -31,6 +35,8 @@ import { useGlobalStore } from '@/stores/global.ts';
 import { useServerStore } from '@/stores/server.ts';
 import openConsolePopout from '../openConsolePopout.ts';
 import ConsoleCommandInput from './ConsoleCommandInput.tsx';
+import ConsoleFilterBar from './ConsoleFilterBar.tsx';
+import type { ConsoleFilter } from './ConsoleFilterBar.tsx';
 import CommandHistoryDrawer from './drawers/CommandHistoryDrawer.tsx';
 import FeatureProvider from './features/FeatureProvider.tsx';
 import SshDetailsModal from './modals/SshDetailsModal.tsx';
@@ -62,6 +68,7 @@ export default function Terminal({ popout = false }: { popout?: boolean }) {
   );
   const settings = useGlobalStore((state) => state.settings);
   const computedColorScheme = useComputedColorScheme('dark');
+  const canReadConsole = useServerCan('control.read-console');
 
   const [inputValue, setInputValue] = useState('');
   const [commandPrefix, setCommandPrefix] = useState('');
@@ -75,6 +82,21 @@ export default function Terminal({ popout = false }: { popout?: boolean }) {
   );
   const [openModal, setOpenModal] = useState<'search' | 'commandHistory' | 'sshDetails' | null>(null);
   const [redactAddresses] = useRedactAddresses();
+
+  // Plain-text mirror of the console, backing the filter panel and the
+  // download fallback. The live xterm terminal stays the source of truth
+  // for display; this list is capped so a spammy server cannot grow it
+  // without bound.
+  const consoleLinesRef = useRef<string[]>([]);
+  const [consoleFilter, setConsoleFilter] = useState<ConsoleFilter>({ text: '', errorsOnly: false });
+  const [consoleLinesVersion, setConsoleLinesVersion] = useState(0);
+  const [downloadingLog, setDownloadingLog] = useState(false);
+  const filterActiveRef = useRef(false);
+  const lastFilterBumpRef = useRef(0);
+
+  useEffect(() => {
+    filterActiveRef.current = consoleFilter.text !== '' || consoleFilter.errorsOnly;
+  }, [consoleFilter]);
 
   const inputValueRef = useRef(inputValue);
   const inputValueUpdatedRef = useRef(false);
@@ -197,6 +219,29 @@ export default function Terminal({ popout = false }: { popout?: boolean }) {
         processed = `\x1b[1m\x1b[33m${containerPreludeRef.current} \x1b[0m${processed}`;
       }
 
+      // Error lines are tinted red in the live terminal (unless Wings
+      // already gave them its own red background, e.g. daemon errors).
+      // Lines that already carry their own colours keep them mid-line;
+      // this is a best-effort highlight, not a recolouring.
+      if (isErrorConsoleLine(processed) && !processed.includes('\x1b[41m')) {
+        processed = `\x1b[31m${processed}\x1b[0m`;
+      }
+
+      // Keep the plain-text mirror in step for the filter panel. Only
+      // re-render the filter while it is active, and at most twice a
+      // second, so a spammy console does not re-render this component
+      // on every line.
+      const lines = consoleLinesRef.current;
+      lines.push(stripAnsiCodes(processed));
+      if (lines.length > 2000) lines.splice(0, lines.length - 2000);
+      if (filterActiveRef.current) {
+        const now = Date.now();
+        if (now - lastFilterBumpRef.current > 500) {
+          lastFilterBumpRef.current = now;
+          setConsoleLinesVersion((version) => version + 1);
+        }
+      }
+
       if (writeLine(processed, isFirstLine.current)) {
         isFirstLine.current = false;
       }
@@ -307,6 +352,40 @@ export default function Terminal({ popout = false }: { popout?: boolean }) {
 
   const consoleAvailable = server.status === null && !server.isSuspended && !server.isTransferring;
 
+  // Filtered console lines for the filter panel: null while no filter is
+  // active, so the panel stays hidden and the terminal is untouched.
+  const filteredConsoleLines = useMemo(() => {
+    if (consoleFilter.text === '' && !consoleFilter.errorsOnly) return null;
+    const needle = consoleFilter.text.toLowerCase();
+    const matches = consoleLinesRef.current.filter((line) => {
+      if (consoleFilter.errorsOnly && !isErrorConsoleLine(line)) return false;
+      if (needle && !line.toLowerCase().includes(needle)) return false;
+      return true;
+    });
+    return { lines: matches.slice(-200), count: matches.length };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [consoleLinesVersion, consoleFilter]);
+
+  const downloadConsoleLog = useCallback(() => {
+    setDownloadingLog(true);
+    getServerLogs(server.uuid, 1000)
+      .then((log) => {
+        downloadTextFile(log, `console-${server.uuidShort}.log`);
+        addToast(t('pages.server.console.filter.toast.downloaded', {}), 'success');
+      })
+      .catch(() => {
+        // Fall back to the lines seen since this page was opened.
+        const fallback = consoleLinesRef.current.join('\n');
+        if (fallback) {
+          downloadTextFile(fallback, `console-${server.uuidShort}.log`);
+          addToast(t('pages.server.console.filter.toast.downloaded', {}), 'success');
+        } else {
+          addToast(t('pages.server.console.filter.toast.downloadFailed', {}), 'error');
+        }
+      })
+      .finally(() => setDownloadingLog(false));
+  }, [server.uuid, server.uuidShort, addToast, t]);
+
   useQuickActions(
     useMemo(
       () => [
@@ -413,6 +492,17 @@ export default function Terminal({ popout = false }: { popout?: boolean }) {
           setSearchText={setSearchText}
           searchAddonRef={searchAddonRef}
           popout={popout}
+        />
+
+        <ConsoleFilterBar
+          filter={consoleFilter}
+          setFilter={setConsoleFilter}
+          filteredLines={filteredConsoleLines ? filteredConsoleLines.lines : null}
+          matchCount={filteredConsoleLines ? filteredConsoleLines.count : null}
+          totalLines={consoleLinesRef.current.length}
+          canDownload={canReadConsole}
+          downloading={downloadingLog}
+          onDownload={downloadConsoleLog}
         />
 
         {!socketConnected && <Spinner.Centered />}

@@ -6781,6 +6781,57 @@ const baseTranslations = defineTranslations({
           },
           socketConnected: 'Connected ({ping}ms ping)',
           socketDisconnected: 'Disconnected',
+          players: {
+            title: 'Online players',
+            count: '{online} of {max} players online',
+            countUnknownMax: '{online} players online',
+            empty: 'No players online.',
+            stale: 'No recent /list output — press Refresh to ask the server.',
+            button: {
+              refresh: 'Refresh player list',
+              kick: 'Kick',
+              ban: 'Ban',
+              whitelistAdd: 'Whitelist',
+              whitelistRemove: 'Unwhitelist',
+            },
+            modal: {
+              kick: {
+                title: 'Kick {player}',
+              },
+              ban: {
+                title: 'Ban {player}',
+              },
+              reason: 'Reason (optional)',
+            },
+            toast: {
+              kicked: 'Kicked {player}.',
+              banned: 'Banned {player}.',
+              whitelistAdded: 'Added {player} to the whitelist.',
+              whitelistRemoved: 'Removed {player} from the whitelist.',
+              commandSent: 'Command sent.',
+            },
+            quick: {
+              title: 'Quick commands',
+              message: 'Message',
+              player: 'Player',
+              target: 'Target',
+              item: 'Item',
+              count: 'Count',
+              send: 'Send',
+            },
+          },
+          filter: {
+            placeholder: 'Filter console…',
+            errorsOnly: 'Errors only',
+            matches: '{count} matching lines (of {total})',
+            noMatches: 'No lines match this filter.',
+            showingLatest: 'Showing the latest {count} matches.',
+            download: 'Download console log',
+            toast: {
+              downloaded: 'Console log downloaded.',
+              downloadFailed: 'Could not download the console log.',
+            },
+          },
         },
         files: {
           empty: {
@@ -9271,6 +9322,14 @@ const baseTranslations = defineTranslations({
             },
             toast: {
               updated: 'Server auto-start behavior updated.',
+            },
+          },
+          restartOnCrash: {
+            title: 'Restart on Crash',
+            description:
+              'Automatically restart the server when it crashes. Tries up to 3 times, waiting 10 seconds, then 1 minute, then 5 minutes after the crash. After the third failed attempt the server is left offline and the failure is recorded in the activity log.',
+            toast: {
+              updated: 'Restart-on-crash setting updated.',
             },
           },
           reinstall: {

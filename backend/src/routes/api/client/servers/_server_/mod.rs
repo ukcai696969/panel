@@ -31,6 +31,7 @@ mod firewall;
 mod logs;
 mod mounts;
 mod power;
+mod players;
 mod resources;
 mod schedules;
 mod settings;
@@ -149,6 +150,7 @@ pub fn router(state: &State) -> OpenApiRouter<State> {
         .nest("/logs", logs::router(state))
         .nest("/websocket", websocket::router(state))
         .nest("/command", command::router(state))
+        .nest("/players", players::router(state))
         .nest("/power", power::router(state))
         .nest("/files", files::router(state))
         .nest("/addons", addons::router(state))

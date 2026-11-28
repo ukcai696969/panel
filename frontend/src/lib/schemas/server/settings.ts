@@ -15,6 +15,10 @@ export const serverSettingsAutostartSchema = z.object({
   behavior: z.enum(['always', 'unless_stopped', 'never']),
 });
 
+export const serverSettingsRestartOnCrashSchema = z.object({
+  enabled: z.boolean(),
+});
+
 export const serverSettingsRenameSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.preprocess(nullableString, z.string().max(1024).nullable()),

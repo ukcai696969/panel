@@ -14,6 +14,7 @@ import { useVisualViewportBottomInset } from '@/plugins/viewport/useVisualViewpo
 import { useCurrentWindow } from '@/providers/CurrentWindowProvider.tsx';
 import { useTranslations } from '@/providers/TranslationProvider.tsx';
 import { useServerStore } from '@/stores/server.ts';
+import PlayersPanel from './players/PlayersPanel.tsx';
 import ServerIndicators from './stats/ServerIndicators.tsx';
 import ServerMetricTiles from './stats/ServerMetricTiles.tsx';
 import ServerPowerControls from './stats/ServerPowerControls.tsx';
@@ -135,6 +136,14 @@ export default function ServerConsole() {
           </div>
         )}
       </ChartSyncGroup>
+
+      <ServerCan action='control.read-console'>
+        <div className='grid xl:grid-cols-4 gap-4 mb-4'>
+          <div className='xl:col-span-3'>
+            <PlayersPanel />
+          </div>
+        </div>
+      </ServerCan>
     </ServerContentContainer>
   );
 }

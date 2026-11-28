@@ -1,0 +1,45 @@
+{
+  "type": "diff",
+  "version": 9,
+  "dialect": "postgres",
+  "id": "04ef623a-c80f-4dd1-8054-9bb8e6731425",
+  "prevIds": [
+    "3b7a772f-f5cb-4041-9fa5-0646d6530e15"
+  ],
+  "footprints": [
+    {
+      "statementType": "alter_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "servers"
+      ],
+      "writes": [
+        "s|tbl|public.servers",
+        "n|tbl|public.servers",
+        "e|tbl|public.servers"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "servers",
+        "name": "restart_on_crash",
+        "type": "boolean",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "false",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    }
+  ]
+}

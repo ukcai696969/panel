@@ -246,6 +246,7 @@ pub struct Server {
     pub labels: IndexMap<compact_str::CompactString, compact_str::CompactString>,
     pub auto_kill: wings_api::ServerConfigurationAutoKill,
     pub auto_start_behavior: ServerAutoStartBehavior,
+    pub restart_on_crash: bool,
     pub timezone: Option<compact_str::CompactString>,
     pub trash: Option<TrashSettings>,
 
@@ -307,6 +308,7 @@ impl PreviewSample for Server {
                 seconds: 30,
             },
             auto_start_behavior: ServerAutoStartBehavior::UnlessStopped,
+            restart_on_crash: false,
             timezone: None,
             trash: None,
             hugepages_passthrough_enabled: false,
@@ -435,6 +437,10 @@ impl BaseModel for Server {
             (
                 "servers.auto_start_behavior",
                 compact_str::format_compact!("{prefix}auto_start_behavior"),
+            ),
+            (
+                "servers.restart_on_crash",
+                compact_str::format_compact!("{prefix}restart_on_crash"),
             ),
             (
                 "servers.timezone",
@@ -571,6 +577,7 @@ impl BaseModel for Server {
                 .0,
             auto_start_behavior: row
                 .try_get(compact_str::format_compact!("{prefix}auto_start_behavior").as_str())?,
+            restart_on_crash: row.try_get(compact_str::format_compact!("{prefix}restart_on_crash").as_str())?,
             timezone: row.try_get(compact_str::format_compact!("{prefix}timezone").as_str())?,
             trash: row
                 .try_get::<Option<sqlx::types::Json<_>>, _>(
@@ -2701,6 +2708,7 @@ impl super::IntoAdminApiObject for Server {
                 labels: self.labels,
                 auto_kill: self.auto_kill,
                 auto_start_behavior: self.auto_start_behavior,
+                restart_on_crash: self.restart_on_crash,
                 timezone: self.timezone,
                 trash: self.trash,
                 trash_defaults: state.settings.get().await?.server.trash,
@@ -2805,6 +2813,7 @@ impl super::IntoApiObject for Server {
                 image: self.image,
                 auto_kill: self.auto_kill,
                 auto_start_behavior: self.auto_start_behavior,
+                restart_on_crash: self.restart_on_crash,
                 timezone: self.timezone,
                 trash,
                 created: self.created.and_utc(),
@@ -3281,6 +3290,8 @@ pub struct UpdateServerOptions {
     #[garde(skip)]
     pub auto_start_behavior: Option<ServerAutoStartBehavior>,
     #[garde(skip)]
+    pub restart_on_crash: Option<bool>,
+    #[garde(skip)]
     #[schema(value_type = Option<Option<String>>)]
     #[serde(
         default,
@@ -3479,6 +3490,7 @@ impl UpdatableModel for Server {
                     .transpose()?,
             )
             .set("auto_start_behavior", options.auto_start_behavior)
+            .set("restart_on_crash", options.restart_on_crash)
             .set(
                 "timezone",
                 options
@@ -3586,6 +3598,9 @@ impl UpdatableModel for Server {
         }
         if let Some(auto_start_behavior) = options.auto_start_behavior {
             self.auto_start_behavior = auto_start_behavior;
+        }
+        if let Some(restart_on_crash) = options.restart_on_crash {
+            self.restart_on_crash = restart_on_crash;
         }
         if let Some(timezone) = options.timezone {
             self.timezone = timezone.map(|t| t.name().into());
@@ -3904,6 +3919,7 @@ pub struct AdminApiServer {
     #[schema(inline)]
     pub auto_kill: wings_api::ServerConfigurationAutoKill,
     pub auto_start_behavior: ServerAutoStartBehavior,
+    pub restart_on_crash: bool,
     pub timezone: Option<compact_str::CompactString>,
     #[schema(inline)]
     pub trash: Option<TrashSettings>,
@@ -3961,6 +3977,7 @@ pub struct ApiServer {
     #[schema(inline)]
     pub auto_kill: wings_api::ServerConfigurationAutoKill,
     pub auto_start_behavior: ServerAutoStartBehavior,
+    pub restart_on_crash: bool,
     pub timezone: Option<compact_str::CompactString>,
     #[schema(inline)]
     pub trash: ApiServerTrash,

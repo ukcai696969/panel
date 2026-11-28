@@ -39,6 +39,7 @@ pub mod billing;
 pub mod commands;
 pub mod routes;
 pub mod tasks;
+pub mod restart_on_crash;
 
 struct RequestLogBudget {
     second: AtomicU64,

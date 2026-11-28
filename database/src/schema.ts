@@ -1493,6 +1493,7 @@ export const serversTable = pgTable(
     labels: json().default({}).notNull(),
     auto_kill: jsonb().default({ enabled: false, seconds: 30 }).notNull(),
     auto_start_behavior: serverAutoStartBehaviorEnum().default('UNLESS_STOPPED').notNull(),
+    restartOnCrash: boolean('restart_on_crash').default(false).notNull(),
     timezone: varchar({ length: 255 }),
     trash: jsonb(),
     hugepages_passthrough_enabled: boolean().default(false).notNull(),

@@ -75,6 +75,7 @@ export const serverSchema = z.looseObject({
     seconds: z.number().int().nonnegative(),
   }),
   autoStartBehavior: z.lazy(() => serverAutostartBehavior),
+  restartOnCrash: z.boolean().default(false),
   timezone: z.string().nullable(),
   trash: z.object({
     retention: z.number().int().nonnegative().nullable(),

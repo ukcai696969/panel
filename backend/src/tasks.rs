@@ -1406,6 +1406,8 @@ pub async fn define_background_tasks(
             },
         )
         .await;
+
+    crate::restart_on_crash::register(background_task_builder).await;
 }
 
 const CRASH_WATCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
