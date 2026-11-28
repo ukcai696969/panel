@@ -1173,6 +1173,16 @@ fn wings_state_name(state: wings_api::ServerState) -> &'static str {
 ///   running. A clean stop has no such crash, so intentional stops
 ///   never alert. (Wings crash detection itself is configured per egg
 ///   via `crash_detection`.)
+/// * A server that is running again may still have crashed since the
+///   last tick: Wings auto-restarts a crashed server after ~5 s, while
+///   this watcher only ticks every 60 s. The running branch therefore
+///   also consults the Wings crash list and alerts on a new crash id,
+///   before recording the tick (recording first would move
+///   `last_seen_at` past the crash and lose it).
+/// * Both sides of the crash-newness comparison are UTC naive
+///   datetimes: Wings crash timestamps are UTC, and
+///   `ServerAlertState::record_observation` stores `last_seen_at` in
+///   UTC. Do not compare them against a database-local timestamp.
 /// * Exactly-once is enforced three ways: the `last_crash_id` /
 ///   `last_alerted_at` state row, the `record_observation` upsert, and
 ///   the partial unique index on `(server_uuid, crash_id)`.
@@ -1213,13 +1223,17 @@ async fn check_server_crashes(state: &shared::State) {
     for (node_uuid, servers) in by_node {
         let node = match Node::by_uuid_optional_cached(&state.database, node_uuid).await {
             Ok(Some(node)) => node,
-            Ok(None) => continue,
+            Ok(None) => {
+                tracing::warn!(node = %node_uuid, "skipping crash check: node not found");
+                continue;
+            }
             Err(err) => {
                 tracing::warn!(node = %node_uuid, "failed to load node for crash check: {err:#?}");
                 continue;
             }
         };
         if node.maintenance_enabled {
+            tracing::debug!(node = %node_uuid, "skipping crash check: node in maintenance");
             continue;
         }
         let client = match node.api_client(&state.database).await {
@@ -1261,6 +1275,7 @@ async fn check_one_server(
 ) {
     let _ = node;
     let Some(current) = utilization.get(&candidate.uuid) else {
+        tracing::warn!(server = %candidate.uuid, "skipping crash check: node does not report this server in utilization; state not updated");
         return; // node does not report this server; do not touch state
     };
     let current_state = wings_state_name(current.state);
@@ -1284,12 +1299,38 @@ async fn check_one_server(
     if current_state == "running" {
         if previous.last_seen_state != "running" && previous.last_alerted_at.is_some() {
             raise_alert(state, client, candidate, current_state, ServerAlertKind::Recovered, None).await;
-        } else {
-            let _ = ServerAlertState::record_observation(
-                &state.database, candidate.uuid, current_state, None, false,
-            )
-            .await;
+            return;
         }
+
+        // Crashed and auto-restarted since the last tick? Wings
+        // restarts a crashed server after ~5 s, so the server can be
+        // running again by this tick and the offline transition below
+        // never happens. Check the Wings crash list before recording
+        // this tick: recording first would move last_seen_at past the
+        // crash timestamp and the crash would never alert.
+        match latest_wings_crash(client, candidate.uuid).await {
+            Ok(Some(crash)) if is_new_crash(&previous, &crash) => {
+                raise_alert(
+                    state,
+                    client,
+                    candidate,
+                    current_state,
+                    ServerAlertKind::Crashed,
+                    Some(crash),
+                )
+                .await;
+                return;
+            }
+            Ok(_) => {}
+            // Crash list unavailable: do not move last_seen_at past a
+            // crash we could not check; retry on the next tick.
+            Err(()) => return,
+        }
+
+        let _ = ServerAlertState::record_observation(
+            &state.database, candidate.uuid, current_state, None, false,
+        )
+        .await;
         return;
     }
 
@@ -1303,32 +1344,26 @@ async fn check_one_server(
     }
 
     // running -> offline: confirm against the Wings crash list.
-    let crashes = match tokio::time::timeout(
-        CRASH_WATCH_TIMEOUT,
-        client.get_servers_server_logs_crashes(candidate.uuid),
-    )
-    .await
-    {
-        Ok(Ok(crashes)) => crashes.crashes,
-        Ok(Err(err)) => {
-            tracing::warn!(server = %candidate.uuid, "failed to load crashes for crash check: {err:#?}");
-            return; // do not update state; retry next tick
-        }
-        Err(_) => {
-            tracing::warn!(server = %candidate.uuid, "timed out loading crashes for crash check");
-            return;
-        }
+    let crash = match latest_wings_crash(client, candidate.uuid).await {
+        Ok(crash) => crash,
+        Err(()) => return, // do not update state; retry next tick
     };
-    let Some(crash) = crashes.iter().max_by_key(|crash| crash.id) else {
+    let Some(crash) = crash else {
         let _ = ServerAlertState::record_observation(
             &state.database, candidate.uuid, current_state, None, false,
         )
         .await;
         return; // clean stop: no crash record, no alert
     };
-    let crash_is_new = previous.last_crash_id.is_none_or(|id| id != crash.id)
-        && crash.timestamp.naive_utc() > previous.last_seen_at;
-    if !crash_is_new {
+    if !is_new_crash(&previous, &crash) {
+        tracing::warn!(
+            server = %candidate.uuid,
+            crash_id = crash.id,
+            crash_timestamp = %crash.timestamp.naive_utc(),
+            last_seen_at = %previous.last_seen_at,
+            last_crash_id = ?previous.last_crash_id,
+            "ignoring crash for crash check: crash is not new (already alerted, or older than last observation)"
+        );
         let _ = ServerAlertState::record_observation(
             &state.database, candidate.uuid, current_state, None, false,
         )
@@ -1342,9 +1377,45 @@ async fn check_one_server(
         candidate,
         current_state,
         ServerAlertKind::Crashed,
-        Some(crash.clone()),
+        Some(crash),
     )
     .await;
+}
+
+/// Whether a Wings crash is one the watcher has not alerted on yet: a
+/// crash id it has never seen, whose timestamp is newer than the last
+/// time the server was observed. Both sides are UTC naive datetimes —
+/// see `ServerAlertState::record_observation` — so this comparison is
+/// only valid because `last_seen_at` is stored in UTC.
+fn is_new_crash(previous: &ServerAlertState, crash: &wings_api::Crash) -> bool {
+    previous.last_crash_id.is_none_or(|id| id != crash.id)
+        && crash.timestamp.naive_utc() > previous.last_seen_at
+}
+
+/// The newest crash Wings recorded for a server, if the crash list
+/// loads. `Err(())` on failure/timeout (already logged); callers must
+/// not advance `last_seen_at` in that case, or a crash that happened
+/// since the last tick would be lost.
+async fn latest_wings_crash(
+    client: &wings_api::client::WingsClient,
+    server_uuid: uuid::Uuid,
+) -> Result<Option<wings_api::Crash>, ()> {
+    match tokio::time::timeout(
+        CRASH_WATCH_TIMEOUT,
+        client.get_servers_server_logs_crashes(server_uuid),
+    )
+    .await
+    {
+        Ok(Ok(crashes)) => Ok(crashes.crashes.into_iter().max_by_key(|crash| crash.id)),
+        Ok(Err(err)) => {
+            tracing::warn!(server = %server_uuid, "failed to load crashes for crash check: {err:#?}");
+            Err(())
+        }
+        Err(_) => {
+            tracing::warn!(server = %server_uuid, "timed out loading crashes for crash check");
+            Err(())
+        }
+    }
 }
 
 /// Creates the alert row, records the state (exactly-once), logs

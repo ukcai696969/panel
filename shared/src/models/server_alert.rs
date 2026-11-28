@@ -513,9 +513,17 @@ impl ServerAlertState {
     }
 
     /// Upserts the observed state. When `alerted` is true the row also
-    /// records `last_alerted_at = NOW()` and, for crash alerts, the
-    /// crash id that was alerted on — atomically, so two concurrent
-    /// ticks cannot both claim the same crash.
+    /// records `last_alerted_at` and, for crash alerts, the crash id
+    /// that was alerted on — atomically, so two concurrent ticks
+    /// cannot both claim the same crash.
+    ///
+    /// `last_seen_at` / `last_alerted_at` are stored as UTC naive
+    /// datetimes, bound from `chrono::Utc::now()` — NOT SQL `NOW()`.
+    /// The database session timezone is the container timezone
+    /// (`TZ=Europe/Berlin` in `compose.aio.yml`), so `NOW()` is
+    /// Berlin wall time, while Wings crash timestamps are UTC; comparing
+    /// the two made every crash look older than the last observation
+    /// and no alert was ever raised.
     pub async fn record_observation(
         database: &crate::database::Database,
         server_uuid: uuid::Uuid,
@@ -523,22 +531,24 @@ impl ServerAlertState {
         crash_id: Option<i64>,
         alerted: bool,
     ) -> Result<(), crate::database::DatabaseError> {
+        let now = chrono::Utc::now().naive_utc();
         sqlx::query(
             r#"
             INSERT INTO server_alert_states
                 (server_uuid, last_seen_state, last_seen_at, last_crash_id, last_alerted_at)
-            VALUES ($1, $2, NOW(), $3, CASE WHEN $4 THEN NOW() ELSE NULL END)
+            VALUES ($1, $2, $5, $3, CASE WHEN $4 THEN $5 ELSE NULL END)
             ON CONFLICT (server_uuid) DO UPDATE SET
                 last_seen_state = EXCLUDED.last_seen_state,
-                last_seen_at = NOW(),
+                last_seen_at = $5,
                 last_crash_id = COALESCE(EXCLUDED.last_crash_id, server_alert_states.last_crash_id),
-                last_alerted_at = CASE WHEN $4 THEN NOW() ELSE server_alert_states.last_alerted_at END
+                last_alerted_at = CASE WHEN $4 THEN $5 ELSE server_alert_states.last_alerted_at END
             "#,
         )
         .bind(server_uuid)
         .bind(state)
         .bind(crash_id)
         .bind(alerted)
+        .bind(now)
         .execute(database.write())
         .await?;
 
