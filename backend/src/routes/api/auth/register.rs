@@ -8,7 +8,9 @@ mod post {
     use shared::{
         ApiError, GetState,
         models::{
-            ByUuid, CreatableModel, user::User, user_email_verification::UserEmailVerification,
+            ByUuid, CreatableModel, EventEmittingModel,
+            user::{User, UserEvent},
+            user_email_verification::UserEmailVerification,
             user_session::UserSession,
         },
         response::{ApiResponse, ApiResponseResult},
@@ -130,6 +132,13 @@ mod post {
                     .ok();
             }
         };
+
+        User::get_event_emitter().emit(
+            state.clone(),
+            UserEvent::Created {
+                user: Box::new(user.clone()),
+            },
+        );
 
         if user.admin {
             sqlx::query!(

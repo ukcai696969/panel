@@ -79,9 +79,9 @@ mod post {
     use shared::{
         ApiError, GetState,
         models::{
-            CreatableModel, IntoAdminApiObject,
+            CreatableModel, EventEmittingModel, IntoAdminApiObject,
             admin_activity::GetAdminActivityLogger,
-            user::{CreateUserOptions, GetPermissionManager, User},
+            user::{CreateUserOptions, GetPermissionManager, User, UserEvent},
         },
         response::{ApiResponse, ApiResponseResult},
     };
@@ -127,6 +127,13 @@ mod post {
             }
             Err(err) => return ApiResponse::from(err).ok(),
         };
+
+        User::get_event_emitter().emit(
+            state.clone(),
+            UserEvent::Created {
+                user: Box::new(user.clone()),
+            },
+        );
 
         activity_logger
             .log(

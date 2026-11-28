@@ -795,6 +795,11 @@ pub async fn handle_startup() -> Result<
 
     tasks::define_background_tasks(&background_task_builder).await;
 
+    // Global API webhooks: register the dispatcher on the server, backup and
+    // user event emitters. The handles are intentionally dropped; disconnect is
+    // explicit, so the listeners live for the life of the process.
+    let _webhook_event_handlers = shared::webhooks::register_webhook_dispatchers(&state);
+
     background_tasks
         .merge_builder(background_task_builder)
         .await;

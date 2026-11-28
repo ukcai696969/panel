@@ -92,6 +92,8 @@ pub mod user_server_group;
 pub mod user_session;
 pub mod user_ssh_key;
 pub mod user_two_factor_code;
+pub mod webhook_delivery;
+pub mod webhook_subscription;
 
 #[derive(ToSchema, Validate, Deserialize, Serialize)]
 pub struct PaginationParams {

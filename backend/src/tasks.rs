@@ -2,13 +2,14 @@ use futures_util::StreamExt;
 use rand::RngExt;
 use shared::{
     models::{
-        ByUuid, CreatableModel, DeletableModel,
+        ByUuid, CreatableModel, DeletableModel, EventEmittingModel,
         admin_activity::{AdminActivity, CreateAdminActivityOptions},
         announcement::{Announcement, AnnouncementType, CreateAnnouncementOptions},
         backup_configuration::BackupConfiguration,
         egg_repository::EggRepository,
         node::Node,
         oauth_provider_mapping::OAuthProviderMapping,
+        server::ServerEvent,
         server_activity::{CreateServerActivityOptions, ServerActivity},
         server_alert::{CreateServerAlertOptions, ServerAlert, ServerAlertKind, ServerAlertState},
         server_backup::{BackupDisk, CreateServerBackupOptions, ServerBackup, ServerBackupKind},
@@ -1768,6 +1769,18 @@ async fn raise_alert(
     .await
     {
         tracing::warn!(server = %candidate.uuid, "failed to log crash alert activity: {err:#?}");
+    }
+
+    // The watcher only raises a Crashed alert for a stop Wings reports as
+    // a crash (a clean stop has no crash record and never reaches here), so
+    // this is the unexpected-stop signal for global webhooks.
+    if kind == ServerAlertKind::Crashed {
+        shared::models::server::Server::get_event_emitter().emit(
+            state.clone(),
+            ServerEvent::Crashed {
+                server: Box::new(server.clone()),
+            },
+        );
     }
 
     match ServerWebhook::enabled_for_server(&state.database, candidate.uuid).await {

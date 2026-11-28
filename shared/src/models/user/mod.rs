@@ -22,6 +22,9 @@ pub use auth::*;
 pub mod avatar;
 pub mod settings;
 
+mod events;
+pub use events::UserEvent;
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct User {
     pub uuid: uuid::Uuid,
@@ -300,7 +303,7 @@ impl User {
                 minijinja::context! {
                     user => minijinja::value::Serde(self),
                     reset_link => format!(
-                        "{app_url}/auth/reset-password?token={}",
+                        "[credential:949d1389-5ba6-4f3d-a5ef-1f732e83f739]",
                         urlencoding::encode(token),
                     )
                 },

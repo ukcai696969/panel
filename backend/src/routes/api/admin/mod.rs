@@ -19,6 +19,7 @@ use utoipa_axum::router::OpenApiRouter;
 mod activity;
 mod alerts;
 mod announcements;
+mod api_webhooks;
 mod assets;
 mod backup_configurations;
 mod billing;
@@ -117,6 +118,7 @@ pub fn router(state: &State) -> OpenApiRouter<State> {
         .nest("/teams", teams::router(state))
         .nest("/extensions", extensions::router(state))
         .nest("/activity", activity::router(state))
+        .nest("/api-webhooks", api_webhooks::router(state))
         .nest("/announcements", announcements::router(state))
         .nest("/alerts", alerts::router(state))
         .nest("/webhooks", webhooks::router(state))

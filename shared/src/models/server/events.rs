@@ -3,6 +3,20 @@ use std::sync::LazyLock;
 
 #[non_exhaustive]
 pub enum ServerEvent {
+    /// Emitted when a server is created (from `Server::create`, after
+    /// Wings accepts the server).
+    Created { server: Box<super::Server> },
+    /// Emitted when a server is started via the client power route, once
+    /// Wings accepts the start action.
+    Started { server: Box<super::Server> },
+    /// Emitted when a server is stopped via the client power route, once
+    /// Wings accepts the stop/kill action.
+    Stopped { server: Box<super::Server> },
+    /// Emitted when a server crashes / exits unexpectedly: the crash
+    /// watcher (`backend::tasks::raise_alert`) raises this when Wings
+    /// reports a crash for a server that was not stopped through the
+    /// panel.
+    Crashed { server: Box<super::Server> },
     /// Emitted when a server transfer starts.
     TransferStarted {
         server: Box<super::Server>,

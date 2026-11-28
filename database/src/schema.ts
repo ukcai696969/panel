@@ -1983,3 +1983,46 @@ export const serverScheduleStepsTable = pgTable(
   },
   (cols) => [index('server_schedule_steps_schedule_uuid_idx').on(cols.schedule_uuid)],
 );
+
+export const webhookSubscriptionsTable = pgTable(
+  'webhook_subscriptions',
+  {
+    uuid: uuid()
+      .default(sql`gen_random_uuid()`)
+      .primaryKey()
+      .notNull(),
+    name: varchar({ length: 128 }).notNull(),
+    url: varchar({ length: 2048 }).notNull(),
+    secret: bytea().notNull(),
+    events: text().array().notNull().default(sql`'{}'`),
+    enabled: boolean().default(true).notNull(),
+    createdByUuid: uuid('created_by_uuid').references(() => usersTable.uuid, {
+      onDelete: 'set null',
+    }),
+    created: timestamp().defaultNow().notNull(),
+    updated: timestamp().defaultNow().notNull(),
+  },
+  (cols) => [index('webhook_subscriptions_enabled_idx').on(cols.enabled)],
+);
+
+export const webhookDeliveriesTable = pgTable(
+  'webhook_deliveries',
+  {
+    uuid: uuid()
+      .default(sql`gen_random_uuid()`)
+      .primaryKey()
+      .notNull(),
+    subscriptionUuid: uuid('subscription_uuid')
+      .notNull()
+      .references(() => webhookSubscriptionsTable.uuid, { onDelete: 'cascade' }),
+    event: varchar({ length: 255 }).notNull(),
+    attempt: integer().default(1).notNull(),
+    statusCode: integer('status_code'),
+    success: boolean().default(false).notNull(),
+    error: text(),
+    created: timestamp().defaultNow().notNull(),
+  },
+  (cols) => [
+    index('webhook_deliveries_subscription_created_idx').on(cols.subscriptionUuid, cols.created),
+  ],
+);

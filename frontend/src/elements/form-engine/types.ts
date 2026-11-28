@@ -238,6 +238,7 @@ export interface RegisteredFormIds {
   'admin.users.createOrUpdate': true;
   'admin.teams.createOrUpdate': true;
   'admin.announcements.createOrUpdate': true;
+  'admin.webhooks.createOrUpdate': true;
   'admin.settings.server': true;
   'admin.settings.advanced': true;
   'admin.settings.webauthn': true;

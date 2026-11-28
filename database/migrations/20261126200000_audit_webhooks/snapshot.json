@@ -1,0 +1,549 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "7b58ccea-9756-4edc-9301-cd014ecf520c",
+  "prevIds": [
+    "04ef623a-c80f-4dd1-8054-9bb8e6731425"
+  ],
+  "footprints": [
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "webhook_subscriptions"
+      ],
+      "writes": [
+        "s|tbl|public.webhook_subscriptions",
+        "n|tbl|public.webhook_subscriptions",
+        "e|tbl|public.webhook_subscriptions",
+        "n|rel|public.webhook_subscriptions",
+        "n|type|public.webhook_subscriptions",
+        "n|rel|public.webhook_subscriptions_pkey"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "webhook_deliveries"
+      ],
+      "writes": [
+        "s|tbl|public.webhook_deliveries",
+        "n|tbl|public.webhook_deliveries",
+        "e|tbl|public.webhook_deliveries",
+        "n|rel|public.webhook_deliveries",
+        "n|type|public.webhook_deliveries",
+        "n|rel|public.webhook_deliveries_pkey"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "webhook_subscriptions",
+        "webhook_subscriptions_enabled_idx"
+      ],
+      "writes": [
+        "s|idx|public.webhook_subscriptions_enabled_idx",
+        "n|idx|public.webhook_subscriptions_enabled_idx",
+        "e|idx|public.webhook_subscriptions_enabled_idx",
+        "n|rel|public.webhook_subscriptions_enabled_idx"
+      ],
+      "reads": [
+        "n|tbl|public.webhook_subscriptions",
+        "n|sch|public",
+        "n|col|public.webhook_subscriptions.enabled"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "webhook_deliveries",
+        "webhook_deliveries_subscription_created_idx"
+      ],
+      "writes": [
+        "s|idx|public.webhook_deliveries_subscription_created_idx",
+        "n|idx|public.webhook_deliveries_subscription_created_idx",
+        "e|idx|public.webhook_deliveries_subscription_created_idx",
+        "n|rel|public.webhook_deliveries_subscription_created_idx"
+      ],
+      "reads": [
+        "n|tbl|public.webhook_deliveries",
+        "n|sch|public",
+        "n|col|public.webhook_deliveries.subscription_uuid",
+        "n|col|public.webhook_deliveries.created"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "webhook_subscriptions"
+      ],
+      "writes": [
+        "s|fk|public.webhook_subscriptions.webhook_subscriptions_created_by_uuid_users_uuid_fk",
+        "n|fk|public.webhook_subscriptions.webhook_subscriptions_created_by_uuid_users_uuid_fk",
+        "e|fk|public.webhook_subscriptions.webhook_subscriptions_created_by_uuid_users_uuid_fk",
+        "n|con|public.webhook_subscriptions.webhook_subscriptions_created_by_uuid_users_uuid_fk"
+      ],
+      "reads": [
+        "n|tbl|public.webhook_subscriptions",
+        "n|sch|public",
+        "n|tbl|public.users",
+        "n|sch|public",
+        "n|col|public.webhook_subscriptions.created_by_uuid",
+        "n|col|public.users.uuid",
+        "e|uniqueness|public.users.uuid"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "webhook_deliveries"
+      ],
+      "writes": [
+        "s|fk|public.webhook_deliveries.webhook_deliveries_subscription_uuid_webhook_subscriptions_uuid_fk",
+        "n|fk|public.webhook_deliveries.webhook_deliveries_subscription_uuid_webhook_subscriptions_uuid_fk",
+        "e|fk|public.webhook_deliveries.webhook_deliveries_subscription_uuid_webhook_subscriptions_uuid_fk",
+        "n|con|public.webhook_deliveries.webhook_deliveries_subscription_uuid_webhook_subscriptions_uuid_fk"
+      ],
+      "reads": [
+        "n|tbl|public.webhook_deliveries",
+        "n|sch|public",
+        "n|tbl|public.webhook_subscriptions",
+        "n|sch|public",
+        "n|col|public.webhook_deliveries.subscription_uuid",
+        "n|col|public.webhook_subscriptions.uuid",
+        "e|uniqueness|public.webhook_subscriptions.uuid"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "webhook_subscriptions",
+        "isRlsEnabled": false,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "webhook_deliveries",
+        "isRlsEnabled": false,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_subscriptions",
+        "name": "uuid",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "gen_random_uuid()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_subscriptions",
+        "name": "name",
+        "type": "varchar(128)",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_subscriptions",
+        "name": "url",
+        "type": "varchar(2048)",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_subscriptions",
+        "name": "secret",
+        "type": "bytea",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_subscriptions",
+        "name": "events",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 1,
+        "default": "'{}'",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_subscriptions",
+        "name": "enabled",
+        "type": "boolean",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "true",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_subscriptions",
+        "name": "created_by_uuid",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_subscriptions",
+        "name": "created",
+        "type": "timestamp",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_subscriptions",
+        "name": "updated",
+        "type": "timestamp",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_deliveries",
+        "name": "uuid",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "gen_random_uuid()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_deliveries",
+        "name": "subscription_uuid",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_deliveries",
+        "name": "event",
+        "type": "varchar(255)",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_deliveries",
+        "name": "attempt",
+        "type": "integer",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "1",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_deliveries",
+        "name": "status_code",
+        "type": "integer",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_deliveries",
+        "name": "success",
+        "type": "boolean",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "false",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_deliveries",
+        "name": "error",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_deliveries",
+        "name": "created",
+        "type": "timestamp",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_subscriptions",
+        "name": "webhook_subscriptions_enabled_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "enabled",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_deliveries",
+        "name": "webhook_deliveries_subscription_created_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "subscription_uuid",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "created",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_subscriptions",
+        "name": "webhook_subscriptions_created_by_uuid_users_uuid_fk",
+        "nameExplicit": false,
+        "columns": [
+          "created_by_uuid"
+        ],
+        "schemaTo": "public",
+        "tableTo": "users",
+        "columnsTo": [
+          "uuid"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "SET NULL",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_deliveries",
+        "name": "webhook_deliveries_subscription_uuid_webhook_subscriptions_uuid_fk",
+        "nameExplicit": false,
+        "columns": [
+          "subscription_uuid"
+        ],
+        "schemaTo": "public",
+        "tableTo": "webhook_subscriptions",
+        "columnsTo": [
+          "uuid"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_subscriptions",
+        "name": "webhook_subscriptions_pkey",
+        "columns": [
+          "uuid"
+        ],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_deliveries",
+        "name": "webhook_deliveries_pkey",
+        "columns": [
+          "uuid"
+        ],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    }
+  ]
+}

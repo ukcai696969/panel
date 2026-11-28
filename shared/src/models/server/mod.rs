@@ -3162,6 +3162,13 @@ impl CreatableModel for Server {
                         return Err(err.into());
                     }
 
+                    Self::get_event_emitter().emit(
+                        state.clone(),
+                        ServerEvent::Created {
+                            server: Box::new(result.clone()),
+                        },
+                    );
+
                     return Ok(result);
                 }
                 Err(_) if attempts < 3 => {

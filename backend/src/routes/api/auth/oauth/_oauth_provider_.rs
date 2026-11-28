@@ -23,9 +23,9 @@ use shared::{
     database::BASE64_ENGINE,
     jwt::BasePayload,
     models::{
-        ByUuid, CreatableModel,
+        ByUuid, CreatableModel, EventEmittingModel,
         oauth_provider::{OAuthProvider, OAuthProviderInfo},
-        user::User,
+        user::{User, UserEvent},
         user_activity::UserActivity,
         user_oauth_link::UserOAuthLink,
         user_session::UserSession,
@@ -528,6 +528,13 @@ pub fn router(state: &State) -> OpenApiRouter<State> {
                                 Err(err) => return ApiResponse::from(err).ok(),
                             }
                         };
+
+                        User::get_event_emitter().emit(
+                            state.clone(),
+                            UserEvent::Created {
+                                user: Box::new(user.clone()),
+                            },
+                        );
 
                         let options = shared::models::user_oauth_link::CreateUserOAuthLinkOptions {
                             user_uuid: user.uuid,

@@ -6579,6 +6579,58 @@ const baseTranslations = defineTranslations({
             description: 'There are no alerts or notifications to show yet.',
           },
         },
+        webhooks: {
+          title: 'Webhooks',
+          form: {
+            name: 'Name',
+            url: 'URL',
+            urlPlaceholder: 'https://example.com/panel-webhook',
+            events: 'Events',
+            enabled: 'Enabled',
+            create: 'Create webhook',
+            save: 'Save webhook',
+            cancelEdit: 'Cancel edit',
+          },
+          secret: {
+            title: 'Signing secret — copy it now, it will not be shown again.',
+            copy: 'Copy secret',
+            copied: 'Copied',
+          },
+          table: {
+            columns: {
+              name: 'Name',
+              url: 'URL',
+              events: 'Events',
+              enabled: 'Enabled',
+              created: 'Created',
+            },
+            edit: 'Edit',
+            test: 'Test',
+            rotateSecret: 'Rotate secret',
+            deliveries: 'Deliveries',
+            delete: 'Delete',
+            confirmDelete: 'Confirm delete?',
+          },
+          deliveries: {
+            title: 'Recent deliveries',
+            columns: {
+              event: 'Event',
+              attempt: 'Attempt',
+              status: 'Status',
+              result: 'Result',
+              error: 'Error',
+              when: 'When',
+            },
+            delivered: 'Delivered',
+            failed: 'Failed',
+          },
+          toast: {
+            saveFailed: 'Could not save the webhook. Check the URL and events and try again.',
+            rotateFailed: 'Could not rotate the secret. Try again.',
+            deliveriesFailed: 'Could not load deliveries.',
+            testFailed: 'Test delivery could not be started.',
+          },
+        },
       },
       server: {
         viewAdmin: {

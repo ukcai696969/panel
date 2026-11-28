@@ -6,7 +6,8 @@ mod post {
     use shared::{
         ApiError, GetState,
         models::{
-            server::{GetServer, GetServerActivityLogger},
+            EventEmittingModel,
+            server::{GetServer, GetServerActivityLogger, Server, ServerEvent},
             user::GetPermissionManager,
         },
         response::{ApiResponse, ApiResponseResult},
@@ -61,6 +62,41 @@ mod post {
                     },
                 )
                 .await?;
+
+            // Wings accepted the power action; the server is (being)
+            // started/stopped now. A restart stops then starts.
+            match data.action {
+                wings_api::ServerPowerAction::Start => {
+                    Server::get_event_emitter().emit(
+                        state.clone(),
+                        ServerEvent::Started {
+                            server: Box::new(server.0.clone()),
+                        },
+                    );
+                }
+                wings_api::ServerPowerAction::Stop | wings_api::ServerPowerAction::Kill => {
+                    Server::get_event_emitter().emit(
+                        state.clone(),
+                        ServerEvent::Stopped {
+                            server: Box::new(server.0.clone()),
+                        },
+                    );
+                }
+                wings_api::ServerPowerAction::Restart => {
+                    Server::get_event_emitter().emit(
+                        state.clone(),
+                        ServerEvent::Stopped {
+                            server: Box::new(server.0.clone()),
+                        },
+                    );
+                    Server::get_event_emitter().emit(
+                        state.clone(),
+                        ServerEvent::Started {
+                            server: Box::new(server.0.clone()),
+                        },
+                    );
+                }
+            }
 
             activity_logger
                 .log(

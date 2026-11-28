@@ -5,17 +5,30 @@
 //! hostnames through [`crate::net::BlockedIpResolver`], dropping every
 //! resolved address in a blocked CIDR (including on redirect). Do not
 //! deliver webhooks through `state.client` or any other client.
+//!
+//! Global API webhooks live here too: [`register_webhook_dispatchers`]
+//! listens to the server, backup and user event emitters and delivers a
+//! signed JSON envelope to every enabled [`WebhookSubscription`] that opted
+//! into the event (see `WEBHOOK_EVENTS`). Delivery goes through
+//! [`crate::net::outbound_request`] as well, and every attempt is recorded
+//! in `webhook_deliveries`.
 
 use crate::{
     State,
     models::{
-        server::Server,
+        server::{Server, ServerEvent},
         server_alert::{ServerAlert, ServerAlertKind},
+        server_backup::{ServerBackup, ServerBackupEvent},
         server_webhook::{ServerWebhook, ServerWebhookEvent, ServerWebhookKind},
+        user::{User, UserEvent},
+        webhook_delivery::{CreateWebhookDeliveryOptions, WebhookDelivery},
+        webhook_subscription::WebhookSubscription,
     },
+    prelude::*,
 };
 use futures_util::StreamExt;
 use sha2::Digest;
+use std::time::Duration;
 
 /// How long a single delivery attempt may take.
 pub const WEBHOOK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
@@ -412,6 +425,421 @@ pub async fn dispatch_server_alert(
         .await;
 }
 
+
+// ---------------------------------------------------------------------------
+// Global API webhooks (event subscriptions)
+// ---------------------------------------------------------------------------
+// Signed HTTP delivery of panel events to admin-configured subscriptions.
+//
+// The dispatcher listens to the existing [`crate::events::EventEmitter`]s
+// (see [`crate::models::EventEmittingModel`]) and POSTs a signed JSON
+// envelope to every enabled subscription that opted into the event.
+//
+// Payload:
+//
+// ```json
+// {
+//   "event": "server.started",
+//   "delivery_id": "00000000-0000-0000-0000-000000000000",
+//   "sent_at": "2026-11-26T19:00:00+00:00",
+//   "data": { "server_uuid": "…", "server_name": "…" }
+// }
+// ```
+//
+// Signing:
+//
+// The request carries `X-Calagopus-Event`, `X-Calagopus-Delivery`,
+// `X-Calagopus-Timestamp` (unix seconds) and `X-Calagopus-Signature`.
+// The signature is `sha256=<hex HMAC-SHA256(secret, "<timestamp>.<body>")>`,
+// so a receiver can verify the payload with:
+//
+// ```text
+// HMAC-SHA256(secret, timestamp + "." + raw_request_body)
+// ```
+//
+// Delivery guarantees:
+//
+// Delivery is best-effort and never blocks the event that triggered it:
+// each subscription is delivered in its own spawned task, with a 10 second
+// request timeout and exactly one retry (after a 1 second delay) on any
+// transport error or non-2xx response. Every attempt is recorded in
+// `webhook_deliveries` so admins can see what was sent and what failed.
+
+/// How long a single delivery attempt may take before it is aborted.
+pub const WEBHOOK_DELIVERY_TIMEOUT: Duration = Duration::from_secs(10);
+/// Delay before the single retry of a failed delivery attempt.
+pub const WEBHOOK_DELIVERY_RETRY_DELAY: Duration = Duration::from_secs(1);
+/// Maximum number of attempts per delivery (first try + one retry).
+pub const WEBHOOK_DELIVERY_MAX_ATTEMPTS: i32 = 2;
+
+pub const WEBHOOK_SIGNATURE_HEADER: &str = "X-Calagopus-Signature";
+pub const WEBHOOK_EVENT_HEADER: &str = "X-Calagopus-Event";
+pub const WEBHOOK_TIMESTAMP_HEADER: &str = "X-Calagopus-Timestamp";
+pub const WEBHOOK_DELIVERY_HEADER: &str = "X-Calagopus-Delivery";
+
+/// Every event name a subscription may opt into.
+pub const WEBHOOK_EVENTS: &[&str] = &[
+    "server.created",
+    "server.started",
+    "server.stopped",
+    "server.crashed",
+    "server.install.started",
+    "server.install.completed",
+    "server.transfer.started",
+    "server.transfer.completed",
+    "backup.finished",
+    "backup.restore.finished",
+    "backup.deleted",
+    "user.created",
+];
+
+#[inline]
+pub fn is_valid_webhook_event(event: &str) -> bool {
+    WEBHOOK_EVENTS.contains(&event)
+}
+
+fn server_payload(server: &Server) -> serde_json::Value {
+    serde_json::json!({
+        "server_uuid": server.uuid,
+        "server_name": server.name,
+        "server_external_id": server.external_id,
+        "owner_uuid": server.owner.uuid,
+        "node_uuid": server.node.uuid,
+        "egg_uuid": server.egg.uuid,
+    })
+}
+
+fn server_payload_with(
+    server: &Server,
+    extra: serde_json::Value,
+) -> serde_json::Value {
+    let mut payload = server_payload(server);
+
+    if let (Some(payload), Some(extra)) = (payload.as_object_mut(), extra.as_object()) {
+        for (key, value) in extra {
+            payload.insert(key.clone(), value.clone());
+        }
+    }
+
+    payload
+}
+
+pub struct GlobalWebhookDeliveryOutcome {
+    pub success: bool,
+    pub status_code: Option<i32>,
+    pub error: Option<String>,
+    pub attempts: i32,
+}
+
+/// Delivers one event to one subscription, with a single retry, and records
+/// every attempt in `webhook_deliveries`. The caller decides which
+/// subscription/event pair to deliver; this function does not filter on the
+/// subscription's event list (the test endpoint relies on that).
+pub async fn deliver_to_subscription(
+    state: &State,
+    subscription: &WebhookSubscription,
+    event: &str,
+    data: serde_json::Value,
+) -> Result<GlobalWebhookDeliveryOutcome, anyhow::Error> {
+    let delivery_uuid = uuid::Uuid::new_v4();
+    let timestamp = chrono::Utc::now().timestamp();
+    let envelope = serde_json::json!({
+        "event": event,
+        "delivery_id": delivery_uuid,
+        "sent_at": chrono::DateTime::from_timestamp(timestamp, 0)
+            .map(|sent_at| sent_at.to_rfc3339())
+            .unwrap_or_default(),
+        "data": data,
+    });
+    let body = serde_json::to_vec(&envelope)?;
+    let secret = subscription.decrypt_secret(&state.database).await?;
+    // Sign "<timestamp>.<body>" — the same construction as `sign_payload`,
+    // inlined here because the timestamp is needed up front for the
+    // envelope's `sent_at`.
+    let mut signed = format!("{timestamp}.").into_bytes();
+    signed.extend_from_slice(&body);
+    let signature = format!("sha256={}", hmac_sha256_hex(secret.as_bytes(), &signed));
+
+    let url = match reqwest::Url::parse(subscription.url.as_str()) {
+        Ok(url) => url,
+        Err(err) => {
+            let error = format!("invalid subscription URL: {err}");
+            WebhookDelivery::create(
+                state,
+                CreateWebhookDeliveryOptions {
+                    subscription_uuid: subscription.uuid,
+                    event: event.into(),
+                    attempt: 1,
+                    status_code: None,
+                    success: false,
+                    error: Some(error.clone().into()),
+                    created: None,
+                },
+            )
+            .await?;
+
+            return Ok(GlobalWebhookDeliveryOutcome {
+                success: false,
+                status_code: None,
+                error: Some(error),
+                attempts: 1,
+            });
+        }
+    };
+
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+
+        let (success, status_code, error) = match crate::net::outbound_request(
+            &state.env,
+            reqwest::Method::POST,
+            url.clone(),
+        ) {
+            Ok(request) => {
+                let response = tokio::time::timeout(
+                    WEBHOOK_DELIVERY_TIMEOUT,
+                    request
+                        .header(WEBHOOK_EVENT_HEADER, event)
+                        .header(WEBHOOK_DELIVERY_HEADER, delivery_uuid.to_string())
+                        .header(WEBHOOK_TIMESTAMP_HEADER, timestamp.to_string())
+                        .header(WEBHOOK_SIGNATURE_HEADER, signature.clone())
+                        .header("Content-Type", "application/json")
+                        .body(body.clone())
+                        .send(),
+                )
+                .await;
+
+                match response {
+                    Ok(Ok(response)) => {
+                        let status = response.status();
+
+                        (
+                            status.is_success(),
+                            Some(status.as_u16() as i32),
+                            if status.is_success() {
+                                None
+                            } else {
+                                Some(format!("unexpected status code: {status}"))
+                            },
+                        )
+                    }
+                    Ok(Err(err)) => (false, None, Some(err.without_url().to_string())),
+                    Err(_) => (
+                        false,
+                        None,
+                        Some(format!(
+                            "webhook delivery timed out after {WEBHOOK_DELIVERY_TIMEOUT:?}"
+                        )),
+                    ),
+                }
+            }
+            // Refused by the SSRF guard before anything was connected.
+            Err(err) => (false, None, Some(format!("blocked webhook URL: {err:#}"))),
+        };
+
+        WebhookDelivery::create(
+            state,
+            CreateWebhookDeliveryOptions {
+                subscription_uuid: subscription.uuid,
+                event: event.into(),
+                attempt,
+                status_code,
+                success,
+                error: error.clone().map(compact_str::CompactString::from),
+                created: None,
+            },
+        )
+        .await?;
+
+        if success || attempt >= WEBHOOK_DELIVERY_MAX_ATTEMPTS {
+            if !success {
+                tracing::warn!(
+                    subscription = %subscription.uuid,
+                    event,
+                    attempts = attempt,
+                    status_code,
+                    error = error.as_deref().unwrap_or("unknown error"),
+                    "webhook delivery failed"
+                );
+            }
+
+            return Ok(GlobalWebhookDeliveryOutcome {
+                success,
+                status_code,
+                error,
+                attempts: attempt,
+            });
+        }
+
+        tokio::time::sleep(WEBHOOK_DELIVERY_RETRY_DELAY).await;
+    }
+}
+
+/// Sends a `webhook.test` event to a subscription, bypassing its event list.
+/// Used by the admin test endpoint.
+pub async fn send_test_event(
+    state: &State,
+    subscription: &WebhookSubscription,
+) -> Result<GlobalWebhookDeliveryOutcome, anyhow::Error> {
+    deliver_to_subscription(
+        state,
+        subscription,
+        "webhook.test",
+        serde_json::json!({
+            "subscription_uuid": subscription.uuid,
+            "subscription_name": subscription.name,
+            "url": subscription.url,
+        }),
+    )
+    .await
+}
+
+/// Fans an event out to every enabled subscription that opted into it. Each
+/// delivery runs in its own task, so a slow or dead endpoint can never block
+/// the panel or the other subscribers.
+pub async fn dispatch_event(state: &State, event: &str, data: serde_json::Value) {
+    let subscriptions = match WebhookSubscription::all_enabled_for_event(&state.database, event)
+        .await
+    {
+        Ok(subscriptions) => subscriptions,
+        Err(err) => {
+            tracing::warn!(event, "failed to load webhook subscriptions: {err:#}");
+            return;
+        }
+    };
+
+    for subscription in subscriptions {
+        let state = state.clone();
+        let event = event.to_string();
+
+        tokio::spawn(async move {
+            if let Err(err) = deliver_to_subscription(&state, &subscription, &event, data).await {
+                tracing::warn!(
+                    subscription = %subscription.uuid,
+                    event = %event,
+                    "webhook delivery failed: {err:#}"
+                );
+            }
+        });
+    }
+}
+
+/// Registers the webhook dispatcher on the server, backup and user event
+/// emitters. Call once at startup (see `backend::handle_startup`).
+///
+/// The returned handles intentionally do not need to be kept alive:
+/// [`crate::events::EventHandlerHandle::disconnect`] is explicit, so dropping
+/// them leaves the listeners registered for the life of the process.
+pub fn register_webhook_dispatchers(_state: &State) -> Vec<crate::events::EventHandlerHandle> {
+    let server_handle = Server::register_event_handler(|state, event| async move {
+        let (name, data) = match &*event {
+            ServerEvent::Created { server } => ("server.created", server_payload(server)),
+            ServerEvent::Started { server } => ("server.started", server_payload(server)),
+            ServerEvent::Stopped { server } => ("server.stopped", server_payload(server)),
+            ServerEvent::Crashed { server } => ("server.crashed", server_payload(server)),
+            ServerEvent::InstallStarted { server, .. } => {
+                ("server.install.started", server_payload(server))
+            }
+            ServerEvent::InstallCompleted { server, successful } => (
+                "server.install.completed",
+                server_payload_with(
+                    server,
+                    serde_json::json!({ "successful": successful }),
+                ),
+            ),
+            ServerEvent::TransferStarted {
+                server,
+                destination_node,
+                ..
+            } => (
+                "server.transfer.started",
+                server_payload_with(
+                    server,
+                    serde_json::json!({ "destination_node_uuid": destination_node.uuid }),
+                ),
+            ),
+            ServerEvent::TransferCompleted {
+                server,
+                successful,
+                ..
+            } => (
+                "server.transfer.completed",
+                server_payload_with(
+                    server,
+                    serde_json::json!({ "successful": successful }),
+                ),
+            ),
+            ServerEvent::StateReset { server } => {
+                // A manual state reset is not a power event; nothing to send.
+                let _ = server;
+                return Ok(());
+            }
+        };
+
+        dispatch_event(&state, name, data).await;
+
+        Ok(())
+    });
+
+    let backup_handle = ServerBackup::register_event_handler(|state, event| async move {
+        let (name, data) = match &*event {
+            ServerBackupEvent::CreationCompleted { backup, successful } => (
+                "backup.finished",
+                serde_json::json!({
+                    "backup_uuid": backup.uuid,
+                    "server_uuid": backup.server.as_ref().map(|server| server.uuid),
+                    "successful": successful,
+                }),
+            ),
+            ServerBackupEvent::RestoreCompleted {
+                backup,
+                server,
+                successful,
+            } => (
+                "backup.restore.finished",
+                serde_json::json!({
+                    "backup_uuid": backup.uuid,
+                    "server_uuid": server.uuid,
+                    "successful": successful,
+                }),
+            ),
+            ServerBackupEvent::DeletionCompleted { backup, successful } => (
+                "backup.deleted",
+                serde_json::json!({
+                    "backup_uuid": backup.uuid,
+                    "server_uuid": backup.server.as_ref().map(|server| server.uuid),
+                    "successful": successful,
+                }),
+            ),
+            ServerBackupEvent::RestoreStarted { .. } => return Ok(()),
+        };
+
+        dispatch_event(&state, name, data).await;
+
+        Ok(())
+    });
+
+    let user_handle = User::register_event_handler(|state, event| async move {
+        let UserEvent::Created { user } = &*event;
+
+        dispatch_event(
+            &state,
+            "user.created",
+            serde_json::json!({
+                "user_uuid": user.uuid,
+                "username": user.username,
+                "email": user.email,
+            }),
+        )
+        .await;
+
+        Ok(())
+    });
+
+    vec![server_handle, backup_handle, user_handle]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -447,5 +875,40 @@ mod tests {
 
         let wrong_path = reqwest::Url::parse("https://discord.com/api/other").unwrap();
         assert!(validate_discord_url(&wrong_path).is_err());
+    }
+
+    #[test]
+    fn global_webhook_signature_is_stable_and_bound_to_timestamp_and_body() {
+        // Same construction as `deliver_to_subscription`: HMAC-SHA256 over
+        // "<timestamp>.<body>".
+        let body = br#"{"event":"server.started"}"#;
+        let sign = |timestamp: i64| {
+            let mut signed = format!("{timestamp}.").into_bytes();
+            signed.extend_from_slice(body);
+            hmac_sha256_hex(b"secret", &signed)
+        };
+
+        assert_eq!(sign(1_700_000_000), sign(1_700_000_000));
+        assert_ne!(sign(1_700_000_000), sign(1_700_000_001));
+        assert_ne!(
+            hmac_sha256_hex(b"secret", body),
+            hmac_sha256_hex(b"other", body)
+        );
+    }
+
+    #[test]
+    fn global_webhook_event_catalogue_covers_the_documented_events() {
+        for event in [
+            "server.created",
+            "server.started",
+            "server.stopped",
+            "server.crashed",
+            "backup.finished",
+            "user.created",
+        ] {
+            assert!(is_valid_webhook_event(event), "{event}");
+        }
+
+        assert!(!is_valid_webhook_event("server.exploded"));
     }
 }

@@ -19,6 +19,7 @@ import {
   faFolderTree,
   faMicrochip,
   faPeopleGroup,
+  faPlug,
   faPuzzlePiece,
   faScroll,
   faServer,
@@ -54,6 +55,7 @@ import AdminSettings from '@/pages/admin/settings/AdminSettings.tsx';
 import AdminSystemBackupPolicies from '@/pages/admin/system-backup-policies/AdminSystemBackupPolicies.tsx';
 import AdminTeams from '@/pages/admin/teams/AdminTeams.tsx';
 import AdminUsers from '@/pages/admin/users/AdminUsers.tsx';
+import AdminWebhooks from '@/pages/admin/webhooks/AdminWebhooks.tsx';
 import { getTranslations } from '@/providers/TranslationProvider.tsx';
 
 export const adminSidebarCategoryOrder: { key: string; label: LazyString }[] = [
@@ -237,6 +239,14 @@ const routes: AdminRouteDefinition[] = [
     path: '/notifications',
     element: AdminNotifications,
     permission: ['activity.read'],
+  },
+  {
+    name: () => getTranslations().t('pages.admin.webhooks.title', {}),
+    icon: faPlug,
+    path: '/webhooks',
+    element: AdminWebhooks,
+    permission: ['webhooks.*'],
+    category: 'access',
     category: 'access',
   },
 
